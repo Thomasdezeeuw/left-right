@@ -11,10 +11,7 @@ use std::sync::Arc;
 /// # Safety
 ///
 /// `left` and `right` **must** be equal.
-pub unsafe fn new<T, O>(left: T, right: T) -> (Writer<T, O>, Handle<T>)
-where
-    O: Operation<T>,
-{
+pub unsafe fn new<T, O>(left: T, right: T) -> (Writer<T, O>, Handle<T>) {
     let shared = unsafe { Shared::new(left, right) };
     (
         Writer {
