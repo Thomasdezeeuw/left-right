@@ -63,7 +63,7 @@ where
 
         // SAFETY: We're the `Writer`.
         let value = unsafe { self.shared.as_ref().writer_access_mut() };
-        for operation in &self.log {
+        for operation in self.log.drain(..) {
             operation.apply(&mut *value);
         }
         self.log.clear();
@@ -87,6 +87,8 @@ impl<T, O> Deref for Writer<T, O> {
 /// Operation to apply to a left-right data structure.
 pub trait Operation<T> {
     /// Apply operation to `target`.
+    ///
+    /// # Correctness
     ///
     /// The operation will be applied twice, once to both copies. Both times it
     /// **must** have the same result.
@@ -124,6 +126,23 @@ pub trait Operation<T> {
     /// }
     /// ```
     fn apply(&self, target: &mut T);
+
+    /// Same as [`Operation::apply`], but can take ownership of `self` to avoid
+    /// things like cloning and allocation by simply moving the value into
+    /// `target`.
+    ///
+    /// The default implementation simply calls `apply`.
+    ///
+    /// # Correctness
+    ///
+    /// This must do the same thing as `apply`, furthermore it may not be
+    /// assumed this will be called at all.
+    fn apply_again(self, target: &mut T)
+    where
+        Self: Sized,
+    {
+        self.apply(target);
+    }
 }
 
 /// A handle to the left-right data structure that provides no access.
