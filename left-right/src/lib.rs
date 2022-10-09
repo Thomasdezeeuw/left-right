@@ -1,3 +1,5 @@
+//! Concurrent left-right data structures.
+
 #![feature(thread_id_value)]
 
 use std::marker::PhantomData;
