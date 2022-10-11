@@ -188,7 +188,7 @@ impl<T> Reader<T> {
     ///
     /// While the returned `ReadGuard` lives it will block the flushing of all
     /// writes.
-    pub fn read<'a>(&'a self) -> ReadGuard<'a, T> {
+    pub fn read<'a>(&'a mut self) -> ReadGuard<'a, T> {
         let shared = self.shared.as_ref();
         ReadGuard {
             value: shared.mark_reading(self.epoch_index),

@@ -9,8 +9,8 @@
 //!
 //! ```
 //! let (mut writer, handle) = hashmap::new();
-//! let reader1 = handle.into_reader();
-//! let reader2 = reader1.clone();
+//! let mut reader1 = handle.into_reader();
+//! let mut reader2 = reader1.clone();
 //!
 //! // Add a value to the writer's copy.
 //! writer.insert("key", "value");
@@ -108,7 +108,7 @@ where
 ///
 /// ```
 /// let (mut writer, handle) = hashmap::new();
-/// let reader = handle.into_reader();
+/// let mut reader = handle.into_reader();
 ///
 /// writer.insert("key", "value");
 /// assert_eq!(writer.len(), 1);
@@ -292,7 +292,7 @@ impl<K, V, S> Reader<K, V, S> {
     ///
     /// While the returned `ReadGuard` lives it will block the flushing of all
     /// writes.
-    pub fn read<'a>(&'a self) -> ReadGuard<'a, K, V, S> {
+    pub fn read<'a>(&'a mut self) -> ReadGuard<'a, K, V, S> {
         ReadGuard {
             inner: self.inner.read(),
         }
