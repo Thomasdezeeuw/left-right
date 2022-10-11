@@ -53,8 +53,12 @@ pub struct Writer<K, V, S = RandomState> {
 ///
 /// [operation]: left_right::Operation
 enum Operation<K, V> {
+    Reserve(usize),
+    ShrinkToFit,
+    ShrinkTo(usize),
     Insert(K, V),
     Remove(K),
+    Clear,
 }
 
 impl<K, V, S> left_right::Operation<HashMap<K, V, S>> for Operation<K, V>
@@ -65,12 +69,16 @@ where
 {
     fn apply(&self, target: &mut HashMap<K, V, S>) {
         match self {
+            Operation::Reserve(additional) => target.reserve(*additional),
+            Operation::ShrinkToFit => target.shrink_to_fit(),
+            Operation::ShrinkTo(min_capacity) => target.shrink_to(*min_capacity),
             Operation::Insert(key, value) => {
                 let _ = target.insert(key.clone(), value.clone());
             }
             Operation::Remove(key) => {
                 let _ = target.remove(&key);
             }
+            Operation::Clear => target.clear(),
         }
     }
 
@@ -79,12 +87,16 @@ where
         Self: Sized,
     {
         match self {
+            Operation::Reserve(additional) => target.reserve(additional),
+            Operation::ShrinkToFit => target.shrink_to_fit(),
+            Operation::ShrinkTo(min_capacity) => target.shrink_to(min_capacity),
             Operation::Insert(key, value) => {
                 let _ = target.insert(key, value);
             }
             Operation::Remove(key) => {
                 let _ = target.remove(&key);
             }
+            Operation::Clear => target.clear(),
         }
     }
 }
@@ -95,6 +107,26 @@ where
     V: Clone,
     S: BuildHasher,
 {
+    /// Reserves capacity for at least `additional` more elements to be inserted
+    /// in the hash map.
+    pub fn reserve(&mut self, additional: usize) {
+        self.inner.apply(Operation::Reserve(additional));
+    }
+
+    /// Shrinks the capacity of the map as much as possible. It will drop
+    /// down as much as possible while maintaining the internal rules
+    /// and possibly leaving some space in accordance with the resize policy.
+    pub fn shrink_to_fit(&mut self) {
+        self.inner.apply(Operation::ShrinkToFit)
+    }
+
+    /// Shrinks the capacity of the map with a lower limit. It will drop
+    /// down no lower than the supplied limit while maintaining the internal rules
+    /// and possibly leaving some space in accordance with the resize policy.
+    pub fn shrink_to(&mut self, min_capacity: usize) {
+        self.inner.apply(Operation::ShrinkTo(min_capacity))
+    }
+
     /// Inserts a key-value pair into the map.
     ///
     /// # Notes
@@ -115,6 +147,18 @@ where
     /// [`flush`]: Writer::flush
     pub fn remove(&mut self, key: K) {
         self.inner.apply(Operation::Remove(key));
+    }
+
+    /// Clears the map, removing all key-value pairs. Keeps the allocated memory
+    /// for reuse.
+    ///
+    /// # Notes
+    ///
+    /// To make this available to the readers you have to call [`flush`] first.
+    ///
+    /// [`flush`]: Writer::flush
+    pub fn clear(&mut self) {
+        self.inner.apply(Operation::Clear);
     }
 
     /// Flush all previously made changes so that the readers can see them.
