@@ -62,7 +62,7 @@
 //! ```
 
 use std::borrow::Borrow;
-use std::collections::hash_map::{HashMap, RandomState};
+use std::collections::hash_map::{Drain, HashMap, RandomState};
 use std::hash::{BuildHasher, Hash};
 use std::ops::Deref;
 
@@ -245,6 +245,14 @@ where
             unsafe { self.inner.apply_to_reader_copy(Operation::Remove(key)) }
         }
         value
+    }
+
+    /// Clears the map, returning all key-value pairs as an iterator. Keeps the
+    /// allocated memory for reuse.
+    pub fn drain<'a>(&'a mut self) -> Drain<'a, K, V> {
+        // SAFETY: we're replicating the clear below with `drain`.
+        unsafe { self.inner.apply_to_reader_copy(Operation::Clear) }
+        unsafe { self.inner.access_mut().drain() }
     }
 
     /// Clears the map, removing all key-value pairs. Keeps the allocated memory
