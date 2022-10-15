@@ -224,15 +224,20 @@ where
         self.inner.apply(Operation::Insert(key, value));
     }
 
-    /// Removes a key from the map.
+    /// Removes `key` from the map, returning the value at the key if the key
+    /// was previously in the map.
     ///
     /// # Notes
     ///
     /// To make this available to the readers you have to call [`flush`] first.
     ///
     /// [`flush`]: Writer::flush
-    pub fn remove(&mut self, key: K) {
-        self.inner.apply(Operation::Remove(key));
+    pub fn remove(&mut self, key: K) -> Option<V> {
+        let value = unsafe { self.inner.access_mut().remove(&key) };
+        if value.is_some() {
+            unsafe { self.inner.apply_to_reader_copy(Operation::Remove(key)) }
+        }
+        value
     }
 
     /// Clears the map, removing all key-value pairs. Keeps the allocated memory
