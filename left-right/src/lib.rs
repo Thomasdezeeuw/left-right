@@ -173,7 +173,6 @@ impl<T> Handle<T> {
 ///
 /// A `Reader` is always bound to a thread and is thus not [`Send`], to move a
 /// reader across first convert into a [`Handle`].
-#[derive(Clone)]
 pub struct Reader<T> {
     shared: Pin<Arc<Shared<T>>>,
     /// Index into the epochs vector.
@@ -216,6 +215,21 @@ impl<T> Reader<T> {
         Handle {
             shared: self.shared,
         }
+    }
+}
+
+impl<T> Clone for Reader<T> {
+    fn clone(&self) -> Reader<T> {
+        Reader {
+            shared: self.shared.clone(),
+            epoch_index: self.epoch_index,
+            _not_send: PhantomData,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Reader<T>) {
+        self.epoch_index = source.epoch_index;
+        self.shared = source.shared.clone();
     }
 }
 
