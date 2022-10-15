@@ -213,15 +213,21 @@ where
         self.inner.apply(Operation::ShrinkTo(min_capacity))
     }
 
-    /// Inserts a key-value pair into the map.
+    /// Inserts a key-value pair into the map, returning the old value if any.
     ///
     /// # Notes
     ///
     /// To make this available to the readers you have to call [`flush`] first.
     ///
     /// [`flush`]: Writer::flush
-    pub fn insert(&mut self, key: K, value: V) {
-        self.inner.apply(Operation::Insert(key, value));
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        // SAFETY: we're replicating the insert below.
+        let old_value = unsafe { self.inner.access_mut().insert(key.clone(), value.clone()) };
+        unsafe {
+            self.inner
+                .apply_to_reader_copy(Operation::Insert(key, value))
+        }
+        old_value
     }
 
     /// Removes `key` from the map, returning the value at the key if the key
@@ -233,6 +239,7 @@ where
     ///
     /// [`flush`]: Writer::flush
     pub fn remove(&mut self, key: K) -> Option<V> {
+        // SAFETY: we're replicating the remove below.
         let value = unsafe { self.inner.access_mut().remove(&key) };
         if value.is_some() {
             unsafe { self.inner.apply_to_reader_copy(Operation::Remove(key)) }
