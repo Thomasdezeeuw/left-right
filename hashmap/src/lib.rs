@@ -341,4 +341,13 @@ where
     {
         self.read().get(key).cloned()
     }
+
+    /// Returns `true` if the map contains a value for the specified `key`.
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        self.read().contains_key(key)
+    }
 }
