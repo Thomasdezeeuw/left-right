@@ -288,16 +288,6 @@ pub struct Reader<K, V, S = RandomState> {
 }
 
 impl<K, V, S> Reader<K, V, S> {
-    /// Get read access to the data structure.
-    ///
-    /// While the returned `ReadGuard` lives it will block the flushing of all
-    /// writes.
-    pub fn read<'a>(&'a mut self) -> ReadGuard<'a, K, V, S> {
-        ReadGuard {
-            inner: self.inner.read(),
-        }
-    }
-
     /// Create new a `Handle` from this `Reader` so it can be moved across
     /// threads.
     pub fn as_handle(&self) -> Handle<K, V, S> {
@@ -311,19 +301,5 @@ impl<K, V, S> Reader<K, V, S> {
         Handle {
             inner: self.inner.into_handle(),
         }
-    }
-}
-
-/// Similar to a mutex guard this protects the data structure so that the read
-/// access is properly synchronised with possible concurrent writes.
-pub struct ReadGuard<'a, K, V, S> {
-    inner: left_right::ReadGuard<'a, HashMap<K, V, S>>,
-}
-
-impl<'a, K, V, S> Deref for ReadGuard<'a, K, V, S> {
-    type Target = HashMap<K, V, S>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.deref()
     }
 }
