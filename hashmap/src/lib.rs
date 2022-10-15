@@ -283,7 +283,6 @@ impl<K, V, S> Handle<K, V, S> {
 ///
 /// A `Reader` is always bound to a thread and is thus not [`Send`], to move a
 /// reader across first convert into a [`Handle`].
-#[derive(Clone)]
 pub struct Reader<K, V, S = RandomState> {
     inner: left_right::Reader<HashMap<K, V, S>>,
 }
@@ -367,5 +366,17 @@ where
         Q: Hash + Eq + ?Sized,
     {
         self.read().contains_key(key)
+    }
+}
+
+impl<K, V, S> Clone for Reader<K, V, S> {
+    fn clone(&self) -> Reader<K, V, S> {
+        Reader {
+            inner: self.inner.clone(),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Reader<K, V, S>) {
+        self.inner = source.inner.clone();
     }
 }
