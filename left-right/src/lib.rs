@@ -287,6 +287,10 @@ mod shared {
         /// Is `read` pointing to `left` or `right?
         /// Maybe only be accessed by the writer.
         reading: UnsafeCell<Reading>,
+        /// This is a transmuted [`thread::Thread`]. If it's NULL it means the
+        /// writer is currently not parked. If it's not NULL the writer is
+        /// parked and waiting for a reader to unpark it.
+        writer_thread: AtomicPtr<()>,
         /// Left copy.
         /// Maybe only be accessed by the writer **iff** `read` is currently
         /// pointing to `right`.
@@ -312,6 +316,7 @@ mod shared {
                 read: AtomicPtr::new(ptr::null_mut()), // NOTE: set below.
                 read_epochs: RwLock::new(Vec::new()),
                 reading: UnsafeCell::new(Reading::Left),
+                writer_thread: AtomicPtr::new(ptr::null_mut()),
                 left: UnsafeCell::new(left),
                 right: UnsafeCell::new(right),
             });
@@ -419,8 +424,12 @@ mod shared {
                     return;
                 }
 
-                // FIXME: don't spin loop here.
-                std::thread::yield_now()
+                // Mark ourselves as parked.
+                let thread = thread::current();
+                self.writer_thread
+                    .store(thread_as_ptr(thread), Ordering::Release);
+                // Sleep until a reader wakes us.
+                thread::park();
             }
         }
 
@@ -458,7 +467,28 @@ mod shared {
                 !thread::panicking() && old_epoch % 2 == 1,
                 "invalid epoch state"
             );
+
+            // Check if we need to wake up the writer thread.
+            if !self.writer_thread.load(Ordering::Relaxed).is_null() {
+                let ptr = self.writer_thread.swap(ptr::null_mut(), Ordering::SeqCst);
+                unsafe { ptr_as_thread(ptr).unpark() }
+            }
         }
+    }
+
+    /// Returns `thread` as a pointer.
+    fn thread_as_ptr(thread: thread::Thread) -> *mut () {
+        // SAFETY: this is not safe.
+        // However `Thread` under the hood is just a `Pin<Arc>`, which is just a
+        // pointer, so it does work.
+        unsafe { std::mem::transmute(thread) }
+    }
+
+    /// Reverse of [`thread_as_ptr`].
+    unsafe fn ptr_as_thread(ptr: *mut ()) -> thread::Thread {
+        // SAFETY: this is not safe.
+        // However as long as it's the reverse of `thread_as_ptr` will work.
+        unsafe { std::mem::transmute(ptr) }
     }
 
     unsafe impl<T: Sync + Send> Sync for Shared<T> {}
