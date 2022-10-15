@@ -298,6 +298,11 @@ impl<K, V, S> Reader<K, V, S> {
         self.read().is_empty()
     }
 
+    /// Returns the number of elements the map can hold without reallocating.
+    pub fn capacity(&self) -> usize {
+        self.read().capacity()
+    }
+
     /// Create new a `Handle` from this `Reader` so it can be moved across
     /// threads.
     pub fn as_handle(&self) -> Handle<K, V, S> {
