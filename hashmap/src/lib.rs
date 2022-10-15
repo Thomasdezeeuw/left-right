@@ -9,48 +9,56 @@
 //!
 //! ```
 //! let (mut writer, handle) = hashmap::new();
+//! let handle2 = handle.clone();
 //! let mut reader1 = handle.into_reader();
-//! let mut reader2 = reader1.clone();
 //!
 //! // Add a value to the writer's copy.
 //! writer.insert("key", "value");
 //! assert_eq!(writer.len(), 1);
 //!
-//! // The readers can't see the value yet.
-//! let read_guard1 = reader1.read();
-//! assert!(read_guard1.get("key").is_none());
-//! assert_eq!(read_guard1.len(), 0);
+//! // We create a `ReadGuard` to get a consistent view of the map.
+//! // SAFETY: we can only have a single `ReadGuard` alive per thread.
+//! let read_guard1 = unsafe { reader1.read() };
+//! // The readers can't see the value yet, because the writer didn't flush them
+//! // yet.
+//! assert!(!read_guard1.contains_key("key"));
+//! assert!(read_guard1.is_empty());
 //!
-//! let handle = std::thread::spawn(move || {
-//!     // After the writer flushes the changes become visible to the readers.
-//!     // This will block until all readers stopped reading the current
-//!     // version. This will happen once all read guard are dropped.
+//! # let handle1 =
+//! std::thread::spawn(move || {
+//!     // Only after the writer flushes, the changes become visible to the
+//!     // readers. This will block until all readers stopped reading the
+//!     // current version. This will happen once all read guards are dropped.
 //!     writer.flush();
 //! });
 //! #
-//! # // Yey sleep based concurrency!
+//! # // Yey, sleep based concurrency!
 //! # std::thread::sleep(std::time::Duration::from_millis(10));
 //!
-//! // After the writer flushed the change they are visible to the readers.
-//! let read_guard2 = reader2.read();
-//! assert_eq!(read_guard2.get("key"), Some(&"value"));
-//! assert_eq!(read_guard2.len(), 1);
-//! drop(read_guard2);
+//! # let handle2 =
+//! std::thread::spawn(move || {
+//!     // NOTE: this would NOT be safe to do on the main thread while
+//!     // `read_guard1` is alive.
+//!     let reader2 = handle2.into_reader();
+//!     // After the writer flushed the change they are visible to the readers.
+//!     assert_eq!(reader2.contains_key("key"), true);
+//!     assert_eq!(reader2.len(), 1);
+//! });
 //!
-//! // However readers that started reading before the writes were flushes will
+//! // However readers that started reading before the writes were flushed will
 //! // still see old values. This ensures the readers get a consistent view of
 //! // the map, albeit (slightly) outdated.
-//! assert!(read_guard1.get("key").is_none());
-//! assert_eq!(read_guard1.len(), 0);
-//! drop(read_guard1); // This unblocks the writer's call to flush.
+//! assert!(!read_guard1.contains_key("key"));
+//! assert!(read_guard1.is_empty());
 //!
-//! // To get an updated view simply drop the read guard and get another one.
-//! let read_guard1 = reader1.read();
-//! assert_eq!(read_guard1.get("key"), Some(&"value"));
-//! assert_eq!(read_guard1.len(), 1);
+//! // To get an updated view simply drop the read guard and continue using the
+//! // reader. Blocking the read guard will unblock the writer's call to flush.
 //! drop(read_guard1);
-//!
-//! # handle.join().unwrap();
+//! assert_eq!(reader1.get("key"), Some("value"));
+//! assert_eq!(reader1.len(), 1);
+//! #
+//! # handle1.join().unwrap();
+//! # handle2.join().unwrap();
 //! ```
 
 use std::borrow::Borrow;
@@ -115,17 +123,13 @@ where
 /// assert_eq!(writer.len(), 1);
 ///
 /// // The reader can't see the value yet.
-/// let r = reader.read();
-/// assert!(r.get("key").is_none());
-/// assert_eq!(r.len(), 0);
-/// drop(r);
+/// assert!(!reader.contains_key("key"));
+/// assert!(reader.is_empty());
 ///
 /// // After the writer flushes the changes become visible to the readers.
 /// writer.flush();
-/// let r = reader.read();
-/// assert_eq!(r.get("key"), Some(&"value"));
-/// assert_eq!(r.len(), 1);
-/// drop(r);
+/// assert_eq!(reader.get("key"), Some("value"));
+/// assert_eq!(reader.len(), 1);
 /// ```
 pub struct Writer<K, V, S = RandomState> {
     inner: left_right::Writer<HashMap<K, V, S>, Operation<K, V>>,
