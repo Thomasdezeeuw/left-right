@@ -188,7 +188,12 @@ impl<T> Reader<T> {
     ///
     /// While the returned `ReadGuard` lives it will block the flushing of all
     /// writes.
-    pub fn read<'a>(&'a mut self) -> ReadGuard<'a, T> {
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that no two `ReadGuard`s are alive on the same
+    /// thread.
+    pub unsafe fn read<'a>(&'a mut self) -> ReadGuard<'a, T> {
         let shared = self.shared.as_ref();
         ReadGuard {
             value: shared.mark_reading(self.epoch_index),
@@ -421,16 +426,24 @@ mod shared {
 
         /// Mark thread with `epoch_index` as reading.
         pub(super) fn mark_reading<'a>(self: Pin<&'a Self>, epoch_index: NonZeroU64) -> &'a T {
-            let _ = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
+            let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
+            debug_assert!(
+                old_epoch % 2 == 0,
+                "holding two read guards on the same thread"
+            );
             // SAFETY: safe based on the requirements on `Shared.read`.
             unsafe { &*self.read.load(Ordering::SeqCst) }
         }
 
         /// Mark thread with `epoch_index` as done reading.
         pub(super) fn mark_done_reading(self: Pin<&Self>, epoch_index: NonZeroU64) {
-            let _ = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
+            let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
+            debug_assert!(
+                !thread::panicking() && old_epoch % 2 == 1,
+                "invalid epoch state"
+            );
         }
     }
 
