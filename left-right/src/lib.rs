@@ -193,7 +193,7 @@ impl<T> Reader<T> {
     ///
     /// The caller must ensure that no two `ReadGuard`s are alive on the same
     /// thread.
-    pub unsafe fn read<'a>(&'a mut self) -> ReadGuard<'a, T> {
+    pub unsafe fn read<'a>(&'a self) -> ReadGuard<'a, T> {
         let shared = self.shared.as_ref();
         ReadGuard {
             value: shared.mark_reading(self.epoch_index),
