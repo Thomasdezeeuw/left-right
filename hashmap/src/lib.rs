@@ -304,6 +304,14 @@ impl<K, V, S> Reader<K, V, S> {
         self.read().capacity()
     }
 
+    /// Returns all keys.
+    pub fn keys(&self) -> Vec<K>
+    where
+        K: Clone,
+    {
+        self.read().keys().cloned().collect()
+    }
+
     /// Create new a `Handle` from this `Reader` so it can be moved across
     /// threads.
     pub fn as_handle(&self) -> Handle<K, V, S> {
