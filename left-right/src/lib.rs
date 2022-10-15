@@ -64,7 +64,15 @@ where
     /// the changes made.
     ///
     /// [applied]: Writer::apply
+    ///
+    /// # Notes
+    ///
+    /// This is a no-op if no writer operations were applied.
     pub fn flush(&mut self) {
+        if self.log.is_empty() {
+            return;
+        }
+
         // SAFETY: we're the `Writer`.
         unsafe {
             self.shared
