@@ -83,7 +83,7 @@ where
         // SAFETY: We're the `Writer`.
         let value = unsafe { self.shared.as_ref().writer_access_mut() };
         for operation in self.log.drain(..) {
-            operation.apply(&mut *value);
+            operation.apply_again(&mut *value);
         }
         self.log.clear();
     }
