@@ -312,6 +312,16 @@ impl<K, V, S> Reader<K, V, S> {
         self.read().keys().cloned().collect()
     }
 
+    /// Returns itself as a clone of the underlying `HashMap`.
+    pub fn as_hashmap(&self) -> HashMap<K, V, S>
+    where
+        K: Clone,
+        V: Clone,
+        S: Clone,
+    {
+        self.read().clone()
+    }
+
     /// Create new a `Handle` from this `Reader` so it can be moved across
     /// threads.
     pub fn as_handle(&self) -> Handle<K, V, S> {
