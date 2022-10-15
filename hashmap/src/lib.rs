@@ -290,17 +290,17 @@ pub struct Reader<K, V, S = RandomState> {
 impl<K, V, S> Reader<K, V, S> {
     /// Returns the number of elements in the map.
     pub fn len(&self) -> usize {
-        self.read().len()
+        unsafe { self.read().len() }
     }
 
     /// Returns `true` if the map contains no elements.
     pub fn is_empty(&self) -> bool {
-        self.read().is_empty()
+        unsafe { self.read().is_empty() }
     }
 
     /// Returns the number of elements the map can hold without reallocating.
     pub fn capacity(&self) -> usize {
-        self.read().capacity()
+        unsafe { self.read().capacity() }
     }
 
     /// Returns all keys.
@@ -308,7 +308,7 @@ impl<K, V, S> Reader<K, V, S> {
     where
         K: Clone,
     {
-        self.read().keys().cloned().collect()
+        unsafe { self.read().keys().cloned().collect() }
     }
 
     /// Returns itself as a clone of the underlying `HashMap`.
@@ -318,7 +318,7 @@ impl<K, V, S> Reader<K, V, S> {
         V: Clone,
         S: Clone,
     {
-        self.read().clone()
+        unsafe { self.read().clone() }
     }
 
     /// Create new a `Handle` from this `Reader` so it can be moved across
@@ -336,11 +336,19 @@ impl<K, V, S> Reader<K, V, S> {
         }
     }
 
+    /// Get read access to the data structure.
+    ///
+    /// While the returned `ReadGuard` lives it will block the flushing of all
+    /// writes.
+    ///
     /// # Safety
     ///
-    /// Can only have at most one `ReadGuard` active per thread at a time.
-    fn read<'a>(&'a self) -> left_right::ReadGuard<'a, HashMap<K, V, S>> {
-        unsafe { self.inner.read() }
+    /// At most one `ReadGuard` may be alive per thread. No other method on the
+    /// type may be called while the `ReadGuard` is alive on this thread.
+    pub unsafe fn read<'a>(&'a self) -> ReadGuard<'a, K, V, S> {
+        ReadGuard {
+            inner: self.inner.read(),
+        }
     }
 }
 
@@ -356,7 +364,7 @@ where
         Q: Hash + Eq + ?Sized,
         V: Clone,
     {
-        self.read().get(key).cloned()
+        unsafe { self.read().get(key).cloned() }
     }
 
     /// Returns `true` if the map contains a value for the specified `key`.
@@ -365,7 +373,7 @@ where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.read().contains_key(key)
+        unsafe { self.read().contains_key(key) }
     }
 }
 
@@ -378,5 +386,23 @@ impl<K, V, S> Clone for Reader<K, V, S> {
 
     fn clone_from(&mut self, source: &Reader<K, V, S>) {
         self.inner = source.inner.clone();
+    }
+}
+
+/// Similar to a mutex guard this protects the data structure so that the read
+/// access is properly synchronised with possible concurrent writes.
+///
+/// # Safety
+///
+/// At most one `ReadGuard` may be alive per thread.
+pub struct ReadGuard<'a, K, V, S> {
+    inner: left_right::ReadGuard<'a, HashMap<K, V, S>>,
+}
+
+impl<'a, K, V, S> Deref for ReadGuard<'a, K, V, S> {
+    type Target = HashMap<K, V, S>;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.deref()
     }
 }
