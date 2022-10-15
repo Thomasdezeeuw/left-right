@@ -53,6 +53,7 @@
 //! # handle.join().unwrap();
 //! ```
 
+use std::borrow::Borrow;
 use std::collections::hash_map::{HashMap, RandomState};
 use std::hash::{BuildHasher, Hash};
 use std::ops::Deref;
@@ -323,5 +324,21 @@ impl<K, V, S> Reader<K, V, S> {
     /// Can only have at most one `ReadGuard` active per thread at a time.
     fn read<'a>(&'a self) -> left_right::ReadGuard<'a, HashMap<K, V, S>> {
         unsafe { self.inner.read() }
+    }
+}
+
+impl<K, V, S> Reader<K, V, S>
+where
+    K: Eq + Hash,
+    S: BuildHasher,
+{
+    /// Returns a clone of to the value corresponding to the `key`.
+    pub fn get<Q>(&self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+        V: Clone,
+    {
+        self.read().get(key).cloned()
     }
 }
