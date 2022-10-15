@@ -247,6 +247,17 @@ where
         value
     }
 
+    /// Removes a key from the map, returning the stored key and value if the
+    /// key was previously in the map.
+    pub fn remove_entry(&mut self, key: K) -> Option<(K, V)> {
+        // SAFETY: we're replicating the remove below.
+        let value = unsafe { self.inner.access_mut().remove_entry(&key) };
+        if value.is_some() {
+            unsafe { self.inner.apply_to_reader_copy(Operation::Remove(key)) }
+        }
+        value
+    }
+
     /// Clears the map, returning all key-value pairs as an iterator. Keeps the
     /// allocated memory for reuse.
     pub fn drain<'a>(&'a mut self) -> Drain<'a, K, V> {
