@@ -48,6 +48,18 @@ where
         self.log.push(operation);
     }
 
+    /// Unlike [`Writer::apply`] this only applies `operation` to the reader's
+    /// copy, not to the writers copy.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `operation` (equivalent) operation is
+    /// already applied to the writer's copy, otherwise the two would go out of
+    /// sync.
+    pub unsafe fn apply_to_reader_copy(&mut self, operation: O) {
+        self.log.push(operation);
+    }
+
     /// Flush all previously [applied] operations so that the readers can see
     /// the changes made.
     ///
@@ -66,6 +78,17 @@ where
             operation.apply(&mut *value);
         }
         self.log.clear();
+    }
+
+    /// Get mutable access to the value `T`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that any changes made to the value MUST be
+    /// replicated to the reader's copy using [`Writer::apply`] or
+    /// [`Writer::apply_to_reader_copy`].
+    pub unsafe fn access_mut(&mut self) -> &mut T {
+        self.value_mut()
     }
 
     fn value_mut(&mut self) -> &mut T {
