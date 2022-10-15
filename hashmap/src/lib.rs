@@ -288,6 +288,16 @@ pub struct Reader<K, V, S = RandomState> {
 }
 
 impl<K, V, S> Reader<K, V, S> {
+    /// Returns the number of elements in the map.
+    pub fn len(&self) -> usize {
+        self.read().len()
+    }
+
+    /// Returns `true` if the map contains no elements.
+    pub fn is_empty(&self) -> bool {
+        self.read().is_empty()
+    }
+
     /// Create new a `Handle` from this `Reader` so it can be moved across
     /// threads.
     pub fn as_handle(&self) -> Handle<K, V, S> {
@@ -301,5 +311,12 @@ impl<K, V, S> Reader<K, V, S> {
         Handle {
             inner: self.inner.into_handle(),
         }
+    }
+
+    /// # Safety
+    ///
+    /// Can only have at most one `ReadGuard` active per thread at a time.
+    fn read<'a>(&'a self) -> left_right::ReadGuard<'a, HashMap<K, V, S>> {
+        unsafe { self.inner.read() }
     }
 }
