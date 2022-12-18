@@ -504,7 +504,9 @@ mod shared {
             // Check if we need to wake up the writer thread.
             if !self.writer_thread.load(Ordering::Relaxed).is_null() {
                 let ptr = self.writer_thread.swap(ptr::null_mut(), Ordering::SeqCst);
-                unsafe { ptr_as_thread(ptr).unpark() }
+                if !ptr.is_null() {
+                    unsafe { ptr_as_thread(ptr).unpark() }
+                }
             }
         }
     }
