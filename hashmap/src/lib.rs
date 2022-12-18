@@ -147,7 +147,7 @@ enum Operation<K, V> {
     Clear,
 }
 
-impl<K, V, S> left_right::Operation<HashMap<K, V, S>> for Operation<K, V>
+unsafe impl<K, V, S> left_right::Operation<HashMap<K, V, S>> for Operation<K, V>
 where
     K: Clone + Eq + Hash,
     V: Clone,
@@ -162,7 +162,7 @@ where
                 let _ = target.insert(key.clone(), value.clone());
             }
             Operation::Remove(key) => {
-                let _ = target.remove(&key);
+                let _ = target.remove(key);
             }
             Operation::Clear => target.clear(),
         }

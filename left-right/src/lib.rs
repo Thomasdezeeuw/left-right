@@ -115,7 +115,12 @@ impl<T, O> Deref for Writer<T, O> {
 }
 
 /// Operation to apply to a left-right data structure.
-pub trait Operation<T> {
+///
+/// # Safety
+///
+/// The implementation of this trait must ensure that the correctness
+/// instructions are followed.
+pub unsafe trait Operation<T> {
     /// Apply operation to `target`.
     ///
     /// # Correctness
@@ -140,7 +145,7 @@ pub trait Operation<T> {
     ///     Division(usize),
     /// }
     ///
-    /// impl<T> Operation<T> for Calculator
+    /// unsafe impl<T> Operation<T> for Calculator
     /// where
     ///     T: AddAssign<usize> + DivAssign<usize> + MulAssign<usize> + SubAssign<usize>,
     /// {
