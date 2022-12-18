@@ -475,10 +475,10 @@ mod shared {
             let length_required = (index.get() + 1) as usize;
             if self.read_epochs.read().unwrap().len() < length_required {
                 // Not enough epoch allocated, allocate them now.
-                self.read_epochs
-                    .write()
-                    .unwrap()
-                    .resize_with(length_required, || AtomicUsize::new(0));
+                let mut epochs = self.read_epochs.write().unwrap();
+                if epochs.len() < length_required {
+                    epochs.resize_with(length_required, || AtomicUsize::new(0));
+                }
             }
             index
         }
