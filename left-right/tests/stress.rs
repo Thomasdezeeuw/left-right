@@ -7,7 +7,10 @@ use left_right::Operation;
 /// Number of read threads used.
 const READ_THREADS: usize = 10;
 /// Number of writes.
+#[cfg(not(miri))]
 const WRITES: usize = 100_000;
+#[cfg(miri)]
+const WRITES: usize = 500;
 
 struct TestOperation;
 
