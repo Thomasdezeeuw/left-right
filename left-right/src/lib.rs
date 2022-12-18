@@ -315,8 +315,8 @@ mod shared {
         ///
         /// # Safety
         ///
-        /// This must always point to either `left` or `right` and must be valid for
-        /// at least as long as `Shared` lives.
+        /// This must always point to either `left` or `right` and must be valid
+        /// for at least as long as `Shared` lives.
         read: AtomicPtr<T>,
         /// Epochs for the readers.
         read_epochs: RwLock<Vec<AtomicUsize>>,
@@ -421,12 +421,12 @@ mod shared {
                     .map(|epoch| epoch.load(Ordering::SeqCst)),
             );
 
-            // If one or more readers are currently accessing the our *now*
-            // writer's copy (after the switch above) we have to wait for them
-            // to increase their epoch, as that means they've stopped accessing
-            // the copy. Note have that after that they can increase their epoch
-            // *again*, but at that point they'll be accessing the *new*
-            // reader's copy (as we switched above).
+            // If one or more readers are currently accessing the writer's copy
+            // (after the switch above) we have to wait for them to increase
+            // their epoch, as that means they've stopped accessing the copy.
+            // Note have that after that they can increase their epoch again,
+            // but at that point they'll be accessing the new reader's copy (as
+            // we switched above).
             //
             // So, we check if the current epoch (`ce`) is in a not-accessing
             // state (`% 2 == 0`) or if the new epoch (`ne`) is in a different
@@ -454,9 +454,9 @@ mod shared {
                     })
                 };
                 if no_readers {
-                    // No more readers are accessing our *now* writer's copy, so
-                    // we safely return ensure that only the writer has access
-                    // to this copy.
+                    // No more readers are accessing the writer's copy, so we
+                    // safely return ensuring that only the writer has access to
+                    // this copy.
                     return;
                 }
 
@@ -499,10 +499,7 @@ mod shared {
         pub(super) fn mark_done_reading(self: Pin<&Self>, epoch_index: NonZeroU64) {
             let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
-            debug_assert!(
-                !thread::panicking() && old_epoch % 2 == 1,
-                "invalid epoch state"
-            );
+            debug_assert!(old_epoch % 2 == 1, "invalid epoch state");
 
             // Check if we need to wake up the writer thread.
             if !self.writer_thread.load(Ordering::Relaxed).is_null() {
