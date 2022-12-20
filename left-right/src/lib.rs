@@ -217,15 +217,12 @@ pub unsafe trait Operation<T> {
 }
 
 /// [`Future`] behind [`Writer::flush`].
-pub struct Flush<'a, T, O> {
+pub struct Flush<'a, T, O: Operation<T>> {
     writer: &'a mut Writer<T, O>,
     flushed: bool,
 }
 
-impl<'a, T, O> Flush<'a, T, O>
-where
-    O: Operation<T>,
-{
+impl<'a, T, O: Operation<T>> Flush<'a, T, O> {
     /// Apply all operations to the current writer copy (the old reader copy).
     ///
     /// # Safety
@@ -243,10 +240,7 @@ where
     }
 }
 
-impl<'a, T, O> Future for Flush<'a, T, O>
-where
-    O: Operation<T>,
-{
+impl<'a, T, O: Operation<T>> Future for Flush<'a, T, O> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<()> {
@@ -274,12 +268,13 @@ where
     }
 }
 
-impl<'a, T, O> Drop for Flush<'a, T, O> {
+impl<'a, T, O: Operation<T>> Drop for Flush<'a, T, O> {
     fn drop(&mut self) {
         if !self.flushed {
             let epochs = &mut self.writer.last_seen_epochs;
             let shared = self.writer.shared.as_ref();
             shared.block_until_all_readers_switched(epochs);
+            unsafe { self.apply_operations() };
         }
     }
 }
