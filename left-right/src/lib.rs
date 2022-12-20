@@ -402,6 +402,7 @@ mod shared {
     use std::cell::UnsafeCell;
     use std::iter::zip;
     use std::num::NonZeroU64;
+    use std::panic::RefUnwindSafe;
     use std::pin::Pin;
     use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
     use std::sync::{Arc, RwLock};
@@ -657,6 +658,8 @@ mod shared {
 
     unsafe impl<T: Sync + Send> Sync for Shared<T> {}
     unsafe impl<T: Sync + Send> Send for Shared<T> {}
+
+    impl<T: RefUnwindSafe> RefUnwindSafe for Shared<T> {}
 }
 
 use shared::Shared;
