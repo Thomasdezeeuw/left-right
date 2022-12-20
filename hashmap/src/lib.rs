@@ -280,7 +280,7 @@ where
 
     /// Flush all previously made changes so that the readers can see them.
     pub fn flush(&mut self) {
-        self.inner.flush();
+        self.inner.blocking_flush();
     }
 }
 

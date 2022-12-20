@@ -54,7 +54,7 @@ fn stress_test() {
 
     for _ in 0..WRITES {
         writer.apply(TestOperation);
-        writer.flush();
+        writer.blocking_flush();
     }
 
     handles.into_iter().for_each(|h| h.join().unwrap());

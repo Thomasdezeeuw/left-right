@@ -41,7 +41,7 @@ fn writer_flush_shows_changes_to_reader_copy() {
     let reader = handle.into_reader();
 
     writer.apply(TestOperation::Append("test"));
-    writer.flush();
+    writer.blocking_flush();
     assert_eq!(unsafe { reader.read().deref() }, "test");
 }
 
@@ -75,7 +75,7 @@ fn write_flush_shows_changes_to_reader_copy() {
     writer.apply(TestOperation::Append("test"));
     barrier.wait(); // Stage 2.
 
-    writer.flush();
+    writer.blocking_flush();
     barrier.wait(); // Stage 3.
     assert_eq!(writer.deref(), "test");
 

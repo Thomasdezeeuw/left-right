@@ -68,11 +68,13 @@ where
     /// # Notes
     ///
     /// This is a no-op if no writer operations were applied.
-    pub fn flush(&mut self) {
+    pub fn blocking_flush(&mut self) {
         if self.log.is_empty() {
             return;
         }
 
+        // Switch the writer and reader copies and block until all readers are
+        // using the new copy.
         // SAFETY: we're the `Writer`.
         unsafe {
             self.shared
@@ -80,6 +82,8 @@ where
                 .switch_reading(&mut self.last_seen_epochs)
         };
 
+        // Next apply all operations we applied to the old writer copy to the
+        // new copy to ensure both are in sync again.
         // SAFETY: We're the `Writer`.
         let value = unsafe { self.shared.as_ref().writer_access_mut() };
         for operation in self.log.drain(..) {
