@@ -412,6 +412,20 @@ mod shared {
                 }
 
                 self.mark_writer_parked();
+
+                // Before we can park ourselves we have to check the readers
+                // epochs again. This is to prevent a race between the last time
+                // we checked the reader epochs and marked ourselves as parked.
+                if self.all_readers_switched(current_epochs) {
+                    // Remove the marked we just set.
+                    let ptr = self.writer_thread.swap(ptr::null_mut(), Ordering::SeqCst);
+                    if !ptr.is_null() {
+                        unsafe { ptr_as_thread(ptr).unpark() }
+                    }
+
+                    return;
+                }
+
                 thread::park();
             }
         }
