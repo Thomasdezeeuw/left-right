@@ -394,32 +394,8 @@ mod shared {
         ///
         /// Only the `Writer` is allowed to call this.
         pub(super) unsafe fn switch_reading(self: Pin<&Self>, current_epochs: &mut Vec<usize>) {
-            // SAFETY: caller must ensure we're the writer.
-            let reading = &mut *self.reading.get();
-            // Switch which copy the readers are accessing.
-            self.read.store(
-                match reading {
-                    Reading::Left => {
-                        *reading = Reading::Right;
-                        &self.right
-                    }
-                    Reading::Right => {
-                        *reading = Reading::Left;
-                        &self.left
-                    }
-                } as *const _ as *mut _,
-                Ordering::SeqCst,
-            );
-
-            // Get the current epochs.
-            current_epochs.clear();
-            current_epochs.extend(
-                self.read_epochs
-                    .read()
-                    .unwrap()
-                    .iter()
-                    .map(|epoch| epoch.load(Ordering::SeqCst)),
-            );
+            self.switch_reading_pointers();
+            self.fill_epochs(current_epochs);
 
             // If one or more readers are currently accessing the writer's copy
             // (after the switch above) we have to wait for them to increase
@@ -427,46 +403,100 @@ mod shared {
             // Note have that after that they can increase their epoch again,
             // but at that point they'll be accessing the new reader's copy (as
             // we switched above).
-            //
-            // So, we check if the current epoch (`ce`) is in a not-accessing
-            // state (`% 2 == 0`) or if the new epoch (`ne`) is in a different
-            // state then previously recorded (`ce != ne`). Note we use `!=`
-            // instead of `>` because the epoch can wrap around (after 2^63
-            // reads).
             loop {
-                let no_readers = {
-                    zip(
-                        current_epochs.iter_mut(),
-                        self.read_epochs.read().unwrap().iter(),
-                    )
-                    .all(|(ce, ne)| {
-                        // If we know the reader is not accessing the value we
-                        // don't have to load their epoch.
-                        (*ce % 2 == 0) || {
-                            let ne = ne.load(Ordering::SeqCst);
-                            if *ce != ne {
-                                *ce = 0; // Short circuit in the next iteration.
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                    })
-                };
-                if no_readers {
+                if self.all_readers_switched(current_epochs) {
                     // No more readers are accessing the writer's copy, so we
                     // safely return ensuring that only the writer has access to
                     // this copy.
                     return;
                 }
 
-                // Mark ourselves as parked.
-                let thread = thread::current();
-                self.writer_thread
-                    .store(thread_as_ptr(thread), Ordering::Release);
-                // Sleep until a reader wakes us.
+                self.mark_writer_parked();
                 thread::park();
             }
+        }
+
+        /// Switch the reader's pointer to the current writer's copy.
+        ///
+        /// # Safety
+        ///
+        /// **After this function returns the `Shared` object is in an invalid
+        /// state**. The caller **must** ensure that all readers are reading
+        /// from the new reader's copy before accessing the old reader's copy.
+        ///
+        /// Only the `Writer` is allowed to call this.
+        unsafe fn switch_reading_pointers(self: Pin<&Self>) {
+            // SAFETY: caller must ensure we're the writer.
+            let ptr = match &mut *self.reading.get() {
+                reading @ Reading::Left => {
+                    *reading = Reading::Right;
+                    &self.right
+                }
+                reading @ Reading::Right => {
+                    *reading = Reading::Left;
+                    &self.left
+                }
+            } as *const _ as *mut _;
+            // Switch which copy the readers are accessing.
+            self.read.store(ptr, Ordering::SeqCst);
+            // NOTE: per the docs, the `Shared` object is not in an invalid
+            // state.
+        }
+
+        /// Fills `epochs` with the values of `self.read_epochs`.
+        fn fill_epochs(self: Pin<&Self>, epochs: &mut Vec<usize>) {
+            epochs.clear();
+            epochs.extend(
+                self.read_epochs
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .map(|epoch| epoch.load(Ordering::SeqCst)),
+            );
+        }
+
+        /// Returns true if all readers have increased their epoch or were not
+        /// in a reading state in `current_epochs`.
+        ///
+        /// # Notes
+        ///
+        /// This function set the state of the reader to 0 in `current_epochs`
+        /// if the reader advanced it's epoch to prevent unnecessary loading of
+        /// the reader's epoch.
+        fn all_readers_switched(self: Pin<&Self>, current_epochs: &mut Vec<usize>) -> bool {
+            // We check if the current epoch (`ce`) is in a not-accessing state
+            // (`% 2 == 0`) or if the new epoch (`ne`) is in a different state
+            // then previously recorded (`ce != ne`). Note we use `!=` instead
+            // of `>` because the epoch can wrap around (after 2^63 reads).
+            zip(
+                current_epochs.iter_mut(),
+                self.read_epochs.read().unwrap().iter(),
+            )
+            .all(|(ce, ne)| {
+                // If we know the reader is not accessing the value we don't
+                // have to load their epoch.
+                if *ce % 2 == 0 {
+                    return true;
+                }
+
+                if *ce != ne.load(Ordering::SeqCst) {
+                    *ce = 0; // Short circuit in the next iteration.
+                    true
+                } else {
+                    false
+                }
+            })
+        }
+
+        /// Mark the writer as parked, requiring a wake up from the readers.
+        ///
+        /// # Safety
+        ///
+        /// Only the `Writer` is allowed to call this.
+        unsafe fn mark_writer_parked(self: Pin<&Self>) {
+            let thread = thread::current();
+            self.writer_thread
+                .store(thread_as_ptr(thread), Ordering::Release);
         }
 
         /// Returns the epoch index.
