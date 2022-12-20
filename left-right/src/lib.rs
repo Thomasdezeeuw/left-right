@@ -285,7 +285,6 @@ impl<'a, T, O: Operation<T>> Drop for Flush<'a, T, O> {
 ///  * Cheaply [`clone`] it.
 ///
 /// [`clone`]: Clone
-#[derive(Clone)]
 pub struct Handle<T> {
     shared: Pin<Arc<Shared<T>>>,
 }
@@ -298,6 +297,14 @@ impl<T> Handle<T> {
             shared: self.shared,
             epoch_index,
             _not_send: PhantomData,
+        }
+    }
+}
+
+impl<T> Clone for Handle<T> {
+    fn clone(&self) -> Handle<T> {
+        Handle {
+            shared: self.shared.clone(),
         }
     }
 }
