@@ -129,8 +129,7 @@ where
     /// # Safety
     ///
     /// The caller must ensure that any changes made to the value MUST be
-    /// replicated to the reader's copy using [`Writer::apply`] or
-    /// [`Writer::apply_to_reader_copy`].
+    /// replicated to the reader's copy using [`Writer::apply_to_reader_copy`].
     pub unsafe fn access_mut(&mut self) -> &mut T {
         self.value_mut()
     }
@@ -556,10 +555,7 @@ mod shared {
         /// This function set the state of the reader to 0 in `current_epochs`
         /// if the reader advanced it's epoch to prevent unnecessary loading of
         /// the reader's epoch.
-        pub(super) fn all_readers_switched(
-            self: Pin<&Self>,
-            current_epochs: &mut Vec<usize>,
-        ) -> bool {
+        pub(super) fn all_readers_switched(self: Pin<&Self>, current_epochs: &mut [usize]) -> bool {
             // We check if the current epoch (`ce`) is in a not-accessing state
             // (`% 2 == 0`) or if the new epoch (`ne`) is in a different state
             // then previously recorded (`ce != ne`). Note we use `!=` instead
@@ -588,7 +584,7 @@ mod shared {
         /// thread.
         pub(super) fn block_until_all_readers_switched(
             self: Pin<&Self>,
-            current_epochs: &mut Vec<usize>,
+            current_epochs: &mut [usize],
         ) {
             loop {
                 if self.all_readers_switched(current_epochs) {
@@ -665,6 +661,8 @@ mod shared {
 use shared::Shared;
 
 mod waker {
+    //! Module to make the fields in [`Waker`] private.
+
     use std::mem::ManuallyDrop;
     use std::sync::atomic::{AtomicPtr, Ordering};
     use std::{ptr, task, thread};
