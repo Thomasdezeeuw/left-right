@@ -105,6 +105,11 @@ where
     /// it will block until the writes are flushed (effectively calling
     /// [`Writer::blocking_flush`]), otherwise it would leave `Writer` in an
     /// invalid state.
+    ///
+    /// # Safety
+    ///
+    /// If the returned [`Flush`] `Future` is not polled to completion **and**
+    /// leaked `Writer` will be an invalid state not safe to use any more.
     pub fn flush<'a>(&'a mut self) -> Flush<'a, T, O> {
         // This follows the same pattern as [`Writer::blocking_flush`].
 
@@ -116,7 +121,7 @@ where
             writer: self,
             flushed: false,
         }
-        // Continue in `Flush::poll` and/or `Flush::drop`.
+        // Continued in `Flush::poll` and/or `Flush::drop`.
     }
 
     /// Get mutable access to the value `T`.
