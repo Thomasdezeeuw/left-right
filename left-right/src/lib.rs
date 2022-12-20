@@ -407,31 +407,7 @@ mod shared {
             // Note have that after that they can increase their epoch again,
             // but at that point they'll be accessing the new reader's copy (as
             // we switched above).
-            loop {
-                if self.all_readers_switched(current_epochs) {
-                    // No more readers are accessing the writer's copy, so we
-                    // safely return ensuring that only the writer has access to
-                    // this copy.
-                    return;
-                }
-
-                self.mark_writer_parked();
-
-                // Before we can park ourselves we have to check the readers
-                // epochs again. This is to prevent a race between the last time
-                // we checked the reader epochs and marked ourselves as parked.
-                if self.all_readers_switched(current_epochs) {
-                    // Remove the marked we just set.
-                    let ptr = self.writer_thread.swap(ptr::null_mut(), Ordering::SeqCst);
-                    if !ptr.is_null() {
-                        unsafe { ptr_as_thread(ptr).unpark() }
-                    }
-
-                    return;
-                }
-
-                thread::park();
-            }
+            self.block_until_all_readers_switched(current_epochs);
         }
 
         /// Switch the reader's pointer to the current writer's copy.
@@ -506,15 +482,39 @@ mod shared {
             })
         }
 
-        /// Mark the writer as parked, requiring a wake up from the readers.
-        ///
-        /// # Safety
-        ///
-        /// Only the `Writer` is allowed to call this.
-        unsafe fn mark_writer_parked(self: Pin<&Self>) {
-            let thread = thread::current();
-            self.writer_thread
-                .store(thread_as_ptr(thread), Ordering::Release);
+        /// Block until `all_readers_switched` return true, by parking the
+        /// thread.
+        pub(super) fn block_until_all_readers_switched(
+            self: Pin<&Self>,
+            current_epochs: &mut Vec<usize>,
+        ) {
+            loop {
+                if self.all_readers_switched(current_epochs) {
+                    // No more readers are accessing the writer's copy, so we
+                    // safely return ensuring that only the writer has access to
+                    // this copy.
+                    return;
+                }
+
+                let thread = thread::current();
+                self.writer_thread
+                    .store(thread_as_ptr(thread), Ordering::Release);
+
+                // Before we can park ourselves we have to check the readers
+                // epochs again. This is to prevent a race between the last time
+                // we checked the reader epochs and marked ourselves as parked.
+                if self.all_readers_switched(current_epochs) {
+                    // Remove the marked we just set.
+                    let ptr = self.writer_thread.swap(ptr::null_mut(), Ordering::SeqCst);
+                    if !ptr.is_null() {
+                        unsafe { ptr_as_thread(ptr).unpark() }
+                    }
+
+                    return;
+                }
+
+                thread::park();
+            }
         }
 
         /// Returns the epoch index.
