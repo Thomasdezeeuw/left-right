@@ -253,10 +253,8 @@ impl<'a, T, O: Operation<T>> Future for Flush<'a, T, O> {
             return Poll::Ready(());
         }
 
-        // SAFETY: See the safety comment in
-        // `Shared::block_until_all_readers_switched` above the call to
-        // `waker.set_thread`, the same argument applies here.
-        unsafe { shared.waker.set_task_waker(ctx.waker().clone()) };
+        // Make sure we get polled again.
+        shared.waker.set_task_waker(ctx.waker().clone());
 
         if shared.all_readers_switched(&mut this.writer.last_seen_epochs) {
             shared.waker.clear();
@@ -594,19 +592,10 @@ mod shared {
                     return;
                 }
 
-                // Mark ourselves as parked, this ensures that the next reader
-                // will unpark us.
+                // Mark ourselves as parked, this ensures that the readers will
+                // unpark us.
                 let thread = thread::current();
-                // SAFETY: at this point either we're in one of three states
-                // regarding the waker:
-                // 1. A clean state, i.e. the waker has never been used before.
-                // 2. A reader woke us and we're in the N+1th iteration, wake
-                //    cleans the waker.
-                // 3. We're in the 0th iteration (of this call), but we
-                //    previously cleared the waker (see `waker.clear` below).
-                // In all three state the waker should be empty (nothing set),
-                // so this is safe to call.
-                unsafe { self.waker.set_thread(thread) };
+                self.waker.set_thread(thread);
 
                 // Before we can park ourselves we have to check the readers
                 // epochs again. This is to prevent a race between the last time
@@ -731,29 +720,30 @@ mod waker {
         }
 
         /// Set the waker to use a `thread` based waker.
-        ///
-        /// # Safety
-        ///
-        /// Caller must ensure that the waker is currently empty.
-        pub(super) unsafe fn set_thread(&self, thread: thread::Thread) {
+        pub(super) fn set_thread(&self, thread: thread::Thread) {
             let data = thread_as_ptr(thread);
-            self.set_raw(data, THREAD_VTABLE);
+            unsafe { self.set_raw(data, THREAD_VTABLE) };
         }
 
         /// Set the waker to use a `task_waker` based waker.
-        ///
-        /// # Safety
-        ///
-        /// Caller must ensure that the waker is currently empty.
-        pub(super) unsafe fn set_task_waker(&self, task_waker: task::Waker) {
+        pub(super) fn set_task_waker(&self, task_waker: task::Waker) {
             let task_waker = ManuallyDrop::new(task_waker);
             let raw_waker = task_waker.as_raw();
             let data = raw_waker.data();
             let vtable = raw_waker.vtable();
-            self.set_raw(data as *mut (), vtable as *const _ as *const () as *mut ());
+            unsafe { self.set_raw(data as *mut (), vtable as *const _ as *const () as *mut ()) };
         }
 
+        /// # Safety
+        ///
+        /// Caller must ensure `data` and `vtable` are correct according to the
+        /// `Waker.data` and `Waker.vtable` docs.
         unsafe fn set_raw(&self, data: *mut (), vtable: *mut ()) {
+            // Spurious thread wake-ups can happend and a `Future` should always
+            // be pollable. So, we need to ensure the waker is in a clear state
+            // before attempt to set it again.
+            self.clear();
+
             debug_assert!(self.data.load(Ordering::Relaxed).is_null());
             debug_assert!(self.vtable.load(Ordering::Relaxed).is_null());
             self.vtable.store(vtable, Ordering::Release);

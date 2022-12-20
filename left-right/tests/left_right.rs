@@ -189,6 +189,53 @@ fn writer_flush_future_dropped() {
     handle.join().unwrap();
 }
 
+#[test]
+fn writer_flush_future_polled_many_times() {
+    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let reader = handle.into_reader();
+
+    let read_guard = unsafe { reader.read() };
+
+    writer.apply(TestOperation::Append("test"));
+
+    let mut future = Box::pin(writer.flush());
+    let (waker, wake_count) = new_count_waker();
+    let mut ctx = task::Context::from_waker(&waker);
+    for _ in 0..10 {
+        assert_eq!(future.as_mut().poll(&mut ctx), Poll::Pending);
+    }
+
+    drop(read_guard);
+    assert_eq!(future.as_mut().poll(&mut ctx), Poll::Ready(()));
+
+    assert_eq!(unsafe { reader.read().deref() }, "test");
+    drop(future);
+    assert_eq!(unsafe { reader.read().deref() }, writer.deref());
+
+    assert_eq!(wake_count, 1);
+}
+
+#[test]
+fn writer_flush_future_polled_after_completion() {
+    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let reader = handle.into_reader();
+
+    writer.apply(TestOperation::Append("test"));
+
+    let mut future = Box::pin(writer.flush());
+    let (waker, wake_count) = new_count_waker();
+    let mut ctx = task::Context::from_waker(&waker);
+    for _ in 0..10 {
+        assert_eq!(future.as_mut().poll(&mut ctx), Poll::Ready(()));
+    }
+
+    assert_eq!(unsafe { reader.read().deref() }, "test");
+    drop(future);
+    assert_eq!(unsafe { reader.read().deref() }, writer.deref());
+
+    assert_eq!(wake_count, 0);
+}
+
 fn new_count_waker() -> (task::Waker, AwokenCount) {
     let inner = Arc::new(WakerInner {
         count: AtomicUsize::new(0),
