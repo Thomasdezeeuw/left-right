@@ -474,7 +474,9 @@ mod shared {
             let index = thread::current().id().as_u64();
             let length_required = (index.get() + 1) as usize;
             if self.read_epochs.read().unwrap().len() < length_required {
-                // Not enough epoch allocated, allocate them now.
+                // Not enough epoch allocated, allocate them now, but first
+                // check the epochs haven't changed in the time between
+                // releasing the read lock and acquiring the write lock.
                 let mut epochs = self.read_epochs.write().unwrap();
                 if epochs.len() < length_required {
                     epochs.resize_with(length_required, || AtomicUsize::new(0));
@@ -485,6 +487,8 @@ mod shared {
 
         /// Mark thread with `epoch_index` as reading.
         pub(super) fn mark_reading<'a>(self: Pin<&'a Self>, epoch_index: NonZeroU64) -> &'a T {
+            // SAFETY: `epoch_index` ensures the `read_epochs` vector is long
+            // enough to make this index safe.
             let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
             debug_assert!(
@@ -497,6 +501,8 @@ mod shared {
 
         /// Mark thread with `epoch_index` as done reading.
         pub(super) fn mark_done_reading(self: Pin<&Self>, epoch_index: NonZeroU64) {
+            // SAFETY: `epoch_index` ensures the `read_epochs` vector is long
+            // enough to make this index safe.
             let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
             debug_assert!(old_epoch % 2 == 1, "invalid epoch state");
