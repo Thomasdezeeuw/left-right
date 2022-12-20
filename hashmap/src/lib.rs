@@ -356,14 +356,6 @@ impl<K, V, S> Reader<K, V, S> {
         unsafe { self.read().clone() }
     }
 
-    /// Create new a `Handle` from this `Reader` so it can be moved across
-    /// threads.
-    pub fn as_handle(&self) -> Handle<K, V, S> {
-        Handle {
-            inner: self.inner.as_handle(),
-        }
-    }
-
     /// Convert this `Reader` into a `Handle` so it can be moved across threads.
     pub fn into_handle(self) -> Handle<K, V, S> {
         Handle {
