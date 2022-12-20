@@ -294,7 +294,7 @@ impl<T> Handle<T> {
     pub fn into_reader(self) -> Reader<T> {
         let epoch_index = self.shared.as_ref().epoch_index();
         Reader {
-            shared: self.shared,
+            handle: self,
             epoch_index,
             _not_send: PhantomData,
         }
@@ -314,7 +314,7 @@ impl<T> Clone for Handle<T> {
 /// A `Reader` is always bound to a thread and is thus not [`Send`], to move a
 /// reader across first convert into a [`Handle`].
 pub struct Reader<T> {
-    shared: Pin<Arc<Shared<T>>>,
+    handle: Handle<T>,
     /// Index into the epochs vector.
     epoch_index: NonZeroU64,
     /// The `Reader` must be `!Send` as the epoch index is based on the thread
@@ -333,7 +333,7 @@ impl<T> Reader<T> {
     /// The caller must ensure that no two `ReadGuard`s are alive on the same
     /// thread.
     pub unsafe fn read<'a>(&'a self) -> ReadGuard<'a, T> {
-        let shared = self.shared.as_ref();
+        let shared = self.handle.shared.as_ref();
         ReadGuard {
             value: shared.mark_reading(self.epoch_index),
             shared,
@@ -344,32 +344,30 @@ impl<T> Reader<T> {
 
     /// Create new a `Handle` from this `Reader` so it can be moved across
     /// threads.
-    pub fn as_handle(&self) -> Handle<T> {
-        Handle {
-            shared: self.shared.clone(),
-        }
+    pub fn as_handle(&self) -> &Handle<T> {
+        &self.handle
     }
 
     /// Convert this `Reader` into a `Handle` so it can be moved across threads.
     pub fn into_handle(self) -> Handle<T> {
-        Handle {
-            shared: self.shared,
-        }
+        self.handle
     }
 }
 
 impl<T> Clone for Reader<T> {
     fn clone(&self) -> Reader<T> {
         Reader {
-            shared: self.shared.clone(),
+            handle: self.handle.clone(),
             epoch_index: self.epoch_index,
             _not_send: PhantomData,
         }
     }
 
     fn clone_from(&mut self, source: &Reader<T>) {
-        self.epoch_index = source.epoch_index;
-        self.shared = source.shared.clone();
+        // NOTE: don't need to copy `epoch_index` as it should already be the
+        // same (can't move `Reader` across thread bounds after all).
+        debug_assert!(self.epoch_index == source.epoch_index);
+        self.handle = source.handle.clone();
     }
 }
 
