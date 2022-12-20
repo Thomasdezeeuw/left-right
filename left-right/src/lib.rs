@@ -1,12 +1,14 @@
 //! Concurrent left-right data structures.
 
-#![feature(thread_id_value)]
+#![feature(thread_id_value, waker_getters)]
 
+use std::future::Future;
 use std::marker::PhantomData;
 use std::num::NonZeroU64;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{self, Poll};
 
 /// Create a new left-right data structure.
 ///
@@ -90,6 +92,31 @@ where
             operation.apply_again(&mut *value);
         }
         self.log.clear();
+    }
+
+    /// Flush all previously [applied] operations so that the readers can see
+    /// the changes made.
+    ///
+    /// [applied]: Writer::apply
+    ///
+    /// # Notes
+    ///
+    /// If the returned [`Future`] is dropped before it is polled to completion
+    /// it will block until the writes are flushed (effectively calling
+    /// [`Writer::blocking_flush`]), otherwise it would leave `Writer` in an
+    /// invalid state.
+    pub fn flush<'a>(&'a mut self) -> Flush<'a, T, O> {
+        // This follows the same pattern as [`Writer::blocking_flush`].
+
+        let shared = self.shared.as_ref();
+        unsafe { shared.switch_reading_pointers() };
+        shared.fill_epochs(&mut self.last_seen_epochs);
+
+        Flush {
+            writer: self,
+            flushed: false,
+        }
+        // Continue in `Flush::poll` and/or `Flush::drop`.
     }
 
     /// Get mutable access to the value `T`.
@@ -181,6 +208,74 @@ pub unsafe trait Operation<T> {
         Self: Sized,
     {
         self.apply(target);
+    }
+}
+
+/// [`Future`] behind [`Writer::flush`].
+pub struct Flush<'a, T, O> {
+    writer: &'a mut Writer<T, O>,
+    flushed: bool,
+}
+
+impl<'a, T, O> Flush<'a, T, O>
+where
+    O: Operation<T>,
+{
+    /// Apply all operations to the current writer copy (the old reader copy).
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that all readers have switched to the new copy, by
+    /// calling [`Shared::all_readers_switched`].
+    unsafe fn apply_operations(&mut self) {
+        // SAFETY: We're the `Writer`.
+        let value = unsafe { self.writer.shared.as_ref().writer_access_mut() };
+        for operation in self.writer.log.drain(..) {
+            operation.apply_again(&mut *value);
+        }
+        self.writer.log.clear();
+        self.flushed = true;
+    }
+}
+
+impl<'a, T, O> Future for Flush<'a, T, O>
+where
+    O: Operation<T>,
+{
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<()> {
+        // This follows the same pattern as [`Writer::blocking_flush`].
+
+        let this = Pin::into_inner(self);
+        let shared = this.writer.shared.as_ref();
+        if shared.all_readers_switched(&mut this.writer.last_seen_epochs) {
+            unsafe { this.apply_operations() };
+            return Poll::Ready(());
+        }
+
+        // SAFETY: See the safety comment in
+        // `Shared::block_until_all_readers_switched` above the call to
+        // `waker.set_thread`, the same argument applies here.
+        unsafe { shared.waker.set_task_waker(ctx.waker().clone()) };
+
+        if shared.all_readers_switched(&mut this.writer.last_seen_epochs) {
+            shared.waker.clear();
+            unsafe { this.apply_operations() };
+            return Poll::Ready(());
+        }
+
+        Poll::Pending
+    }
+}
+
+impl<'a, T, O> Drop for Flush<'a, T, O> {
+    fn drop(&mut self) {
+        if !self.flushed {
+            let epochs = &mut self.writer.last_seen_epochs;
+            let shared = self.writer.shared.as_ref();
+            shared.block_until_all_readers_switched(epochs);
+        }
     }
 }
 
@@ -309,6 +404,8 @@ mod shared {
     use std::sync::{Arc, RwLock};
     use std::{ptr, thread};
 
+    use super::waker::Waker;
+
     /// Data shared between the readers and writer.
     ///
     /// # Safety
@@ -327,10 +424,8 @@ mod shared {
         /// Is `read` pointing to `left` or `right?
         /// Maybe only be accessed by the writer.
         reading: UnsafeCell<Reading>,
-        /// This is a transmuted [`thread::Thread`]. If it's NULL it means the
-        /// writer is currently not parked. If it's not NULL the writer is
-        /// parked and waiting for a reader to unpark it.
-        writer_thread: AtomicPtr<()>,
+        /// Waker for the writer.
+        pub(super) waker: Waker,
         /// Left copy.
         /// Maybe only be accessed by the writer **iff** `read` is currently
         /// pointing to `right`.
@@ -356,7 +451,7 @@ mod shared {
                 read: AtomicPtr::new(ptr::null_mut()), // NOTE: set below.
                 read_epochs: RwLock::new(Vec::new()),
                 reading: UnsafeCell::new(Reading::Left),
-                writer_thread: AtomicPtr::new(ptr::null_mut()),
+                waker: Waker::new(),
                 left: UnsafeCell::new(left),
                 right: UnsafeCell::new(right),
             });
@@ -419,7 +514,7 @@ mod shared {
         /// from the new reader's copy before accessing the old reader's copy.
         ///
         /// Only the `Writer` is allowed to call this.
-        unsafe fn switch_reading_pointers(self: Pin<&Self>) {
+        pub(super) unsafe fn switch_reading_pointers(self: Pin<&Self>) {
             // SAFETY: caller must ensure we're the writer.
             let ptr = match &mut *self.reading.get() {
                 reading @ Reading::Left => {
@@ -438,7 +533,7 @@ mod shared {
         }
 
         /// Fills `epochs` with the values of `self.read_epochs`.
-        fn fill_epochs(self: Pin<&Self>, epochs: &mut Vec<usize>) {
+        pub(super) fn fill_epochs(self: Pin<&Self>, epochs: &mut Vec<usize>) {
             epochs.clear();
             epochs.extend(
                 self.read_epochs
@@ -457,7 +552,10 @@ mod shared {
         /// This function set the state of the reader to 0 in `current_epochs`
         /// if the reader advanced it's epoch to prevent unnecessary loading of
         /// the reader's epoch.
-        fn all_readers_switched(self: Pin<&Self>, current_epochs: &mut Vec<usize>) -> bool {
+        pub(super) fn all_readers_switched(
+            self: Pin<&Self>,
+            current_epochs: &mut Vec<usize>,
+        ) -> bool {
             // We check if the current epoch (`ce`) is in a not-accessing state
             // (`% 2 == 0`) or if the new epoch (`ne`) is in a different state
             // then previously recorded (`ce != ne`). Note we use `!=` instead
@@ -496,20 +594,25 @@ mod shared {
                     return;
                 }
 
+                // Mark ourselves as parked, this ensures that the next reader
+                // will unpark us.
                 let thread = thread::current();
-                self.writer_thread
-                    .store(thread_as_ptr(thread), Ordering::Release);
+                // SAFETY: at this point either we're in one of three states
+                // regarding the waker:
+                // 1. A clean state, i.e. the waker has never been used before.
+                // 2. A reader woke us and we're in the N+1th iteration, wake
+                //    cleans the waker.
+                // 3. We're in the 0th iteration (of this call), but we
+                //    previously cleared the waker (see `waker.clear` below).
+                // In all three state the waker should be empty (nothing set),
+                // so this is safe to call.
+                unsafe { self.waker.set_thread(thread) };
 
                 // Before we can park ourselves we have to check the readers
                 // epochs again. This is to prevent a race between the last time
                 // we checked the reader epochs and marked ourselves as parked.
                 if self.all_readers_switched(current_epochs) {
-                    // Remove the marked we just set.
-                    let ptr = self.writer_thread.swap(ptr::null_mut(), Ordering::SeqCst);
-                    if !ptr.is_null() {
-                        unsafe { ptr_as_thread(ptr).unpark() }
-                    }
-
+                    self.waker.clear();
                     return;
                 }
 
@@ -554,12 +657,163 @@ mod shared {
             let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
             debug_assert!(old_epoch % 2 == 1, "invalid epoch state");
+            self.waker.wake()
+        }
+    }
 
-            // Check if we need to wake up the writer thread.
-            if !self.writer_thread.load(Ordering::Relaxed).is_null() {
-                let ptr = self.writer_thread.swap(ptr::null_mut(), Ordering::SeqCst);
-                if !ptr.is_null() {
-                    unsafe { ptr_as_thread(ptr).unpark() }
+    unsafe impl<T: Sync + Send> Sync for Shared<T> {}
+    unsafe impl<T: Sync + Send> Send for Shared<T> {}
+}
+
+use shared::Shared;
+
+mod waker {
+    use std::mem::ManuallyDrop;
+    use std::sync::atomic::{AtomicPtr, Ordering};
+    use std::{ptr, task, thread};
+
+    /// Waker that can either be a [`task::Waker`] or a
+    /// [`thread::Thread::unpark`] based waker.
+    pub(super) struct Waker {
+        /// The `data` and `vtable` field somewhat mimic the `task::RawWaker`,
+        /// in fact it could be the exact fields to a `task::RawWaker`. With
+        /// these two fields we support two kinds of wakers:
+        /// 1. Thread based wakers using [`thread::Thread::unpark`]
+        /// 2. `task::Waker` to support futures.
+        ///
+        /// # Invariants
+        ///
+        /// If `data` is not null `vtable` must be set.
+        ///
+        /// # Thread based Waker
+        ///
+        /// `vtable` is set to `THREAD_VTABLE`, but it is not an actual vtable.
+        /// `data` is a transmuted [`thread::Thread`] (which is a pointer
+        /// itself).
+        ///
+        /// # `task::Waker` based Waker
+        ///
+        /// `vtable` is set to a valid `&'static RawWakerVTable`, safe to pass
+        /// to `task::RawWaker::new`. `data` is the data passed to the same
+        /// `task::RawWaker::new` call.
+        ///
+        /// # Empty Waker
+        ///
+        /// If `data` is empty it means no waker is set. Note that this also
+        /// means `vtable` must be empty. Also see the write and reader ordering
+        /// below.
+        ///
+        /// # Write Order
+        ///
+        /// To support the invariants above the `vtable` must always be written
+        /// first, then the `data` field. When writing the waker must currently
+        /// be empty, i.e. `wake` or `clear` must have been caller previously.
+        ///
+        /// # Read Order
+        ///
+        /// To support the invariants above the `data` field must always be read
+        /// before the `vtable`. The `vtable` field will only be valid if the
+        /// `data` field is not null.
+        data: AtomicPtr<()>,
+        vtable: AtomicPtr<()>,
+    }
+
+    /// Fake vtable data for [`Waker`].
+    const THREAD_VTABLE: *mut () = 1 as *mut ();
+
+    impl Waker {
+        /// Create a new `Waker`.
+        pub(super) const fn new() -> Waker {
+            Waker {
+                data: AtomicPtr::new(ptr::null_mut()),
+                vtable: AtomicPtr::new(ptr::null_mut()),
+            }
+        }
+
+        /// Set the waker to use a `thread` based waker.
+        ///
+        /// # Safety
+        ///
+        /// Caller must ensure that the waker is currently empty.
+        pub(super) unsafe fn set_thread(&self, thread: thread::Thread) {
+            let data = thread_as_ptr(thread);
+            self.set_raw(data, THREAD_VTABLE);
+        }
+
+        /// Set the waker to use a `task_waker` based waker.
+        ///
+        /// # Safety
+        ///
+        /// Caller must ensure that the waker is currently empty.
+        pub(super) unsafe fn set_task_waker(&self, task_waker: task::Waker) {
+            let task_waker = ManuallyDrop::new(task_waker);
+            let raw_waker = task_waker.as_raw();
+            let data = raw_waker.data();
+            let vtable = raw_waker.vtable();
+            self.set_raw(data as *mut (), vtable as *const _ as *const () as *mut ());
+        }
+
+        unsafe fn set_raw(&self, data: *mut (), vtable: *mut ()) {
+            debug_assert!(self.data.load(Ordering::Relaxed).is_null());
+            debug_assert!(self.vtable.load(Ordering::Relaxed).is_null());
+            self.vtable.store(vtable, Ordering::Release);
+            self.data.store(data, Ordering::SeqCst);
+        }
+
+        /// Wake the waker, if set.
+        pub(super) fn wake(&self) {
+            if self.data.load(Ordering::Relaxed).is_null() {
+                // No data set, means no waker set.
+                return;
+            }
+
+            let data = self.data.swap(ptr::null_mut(), Ordering::SeqCst);
+            if !data.is_null() {
+                let vtable = self.vtable.swap(ptr::null_mut(), Ordering::SeqCst);
+                match vtable {
+                    THREAD_VTABLE => unsafe { ptr_as_thread(data).unpark() },
+                    vtable => unsafe {
+                        // It should not be possible for the `vtable` to be
+                        // null. It's always set before the data is set and is
+                        // always read after data is read.
+                        debug_assert!(!vtable.is_null());
+
+                        // SAFETY: per the docs on `Waker.vtable` it's either
+                        // `THREAD_VTABLE` or a valid `RawWakerVTable` pointer.
+                        let vtable: &'static task::RawWakerVTable = &*vtable.cast();
+                        let raw = task::RawWaker::new(data, vtable);
+                        // SAFETY: the caller gave us a `task::Waker` (in
+                        // `set_task_waker`), assuming they followed the
+                        // requirements we're also following them.
+                        task::Waker::from_raw(raw).wake();
+                    },
+                }
+            }
+        }
+
+        /// Clears the waker, without waking it.
+        pub(super) fn clear(&self) {
+            // This follows the same pattern as [`Waker::wake`].
+
+            if self.data.load(Ordering::Relaxed).is_null() {
+                // No data set, means no waker set.
+                return;
+            }
+
+            let data = self.data.swap(ptr::null_mut(), Ordering::SeqCst);
+            if !data.is_null() {
+                let vtable = self.vtable.swap(ptr::null_mut(), Ordering::SeqCst);
+                match vtable {
+                    THREAD_VTABLE => unsafe { drop(ptr_as_thread(data)) },
+                    vtable => unsafe {
+                        debug_assert!(!vtable.is_null());
+
+                        // SAFETY: See Waker::waker.
+                        let vtable: &'static task::RawWakerVTable = &*vtable.cast();
+                        let raw = task::RawWaker::new(data, vtable);
+                        // SAFETY: See Waker::waker.
+                        drop(task::Waker::from_raw(raw));
+                    },
                 }
             }
         }
@@ -579,9 +833,4 @@ mod shared {
         // However as long as it's the reverse of `thread_as_ptr` will work.
         unsafe { std::mem::transmute(ptr) }
     }
-
-    unsafe impl<T: Sync + Send> Sync for Shared<T> {}
-    unsafe impl<T: Sync + Send> Send for Shared<T> {}
 }
-
-use shared::Shared;
