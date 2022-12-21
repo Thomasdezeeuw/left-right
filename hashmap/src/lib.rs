@@ -433,7 +433,7 @@ impl<K, V, S> Clone for Reader<K, V, S> {
     }
 
     fn clone_from(&mut self, source: &Reader<K, V, S>) {
-        self.inner = source.inner.clone();
+        self.inner.clone_from(&source.inner);
     }
 }
 

@@ -303,7 +303,7 @@ impl<T> Clone for Reader<T> {
         // NOTE: don't need to copy `epoch_index` as it should already be the
         // same (can't move `Reader` across thread bounds after all).
         debug_assert!(self.epoch_index == source.epoch_index);
-        self.handle = source.handle.clone();
+        self.handle.clone_from(&source.handle);
     }
 }
 
