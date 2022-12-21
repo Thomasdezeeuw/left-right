@@ -401,6 +401,20 @@ where
         unsafe { self.read().get(key).cloned() }
     }
 
+    /// Returns a clone of to the key-value pair corresponding to the `key`.
+    pub fn get_key_value<Q>(&self, key: &Q) -> Option<(K, V)>
+    where
+        K: Clone + Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+        V: Clone,
+    {
+        unsafe {
+            self.read()
+                .get_key_value(key)
+                .map(|(k, v)| (k.clone(), v.clone()))
+        }
+    }
+
     /// Returns `true` if the map contains a value for the specified `key`.
     pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
