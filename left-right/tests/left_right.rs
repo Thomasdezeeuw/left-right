@@ -21,7 +21,7 @@ unsafe impl Operation<String> for TestOperation {
 
 #[test]
 fn writer_apply_does_not_apply_to_reader_copy() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) = left_right::new_from_default::<String, _>();
     let reader = handle.into_reader();
 
     writer.apply(TestOperation::Append("test"));

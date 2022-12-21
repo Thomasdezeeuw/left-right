@@ -30,6 +30,17 @@ pub unsafe fn new<T, O>(left: T, right: T) -> (Writer<T, O>, Handle<T>) {
     )
 }
 
+/// Create a new left-right data structure from a default value.
+///
+/// # Safety
+///
+/// This function is safe because it assume that the [`Default`] implementation
+/// for `T` always returns the same value. If this is not the case the left and
+/// right copies will be out of sync.
+pub fn new_from_default<T: Default, O>() -> (Writer<T, O>, Handle<T>) {
+    unsafe { new(T::default(), T::default()) }
+}
+
 /// Write access to the left-right data structure.
 pub struct Writer<T, O> {
     shared: Pin<Arc<Shared<T>>>,
