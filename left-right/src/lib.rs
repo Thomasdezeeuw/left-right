@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{self, Poll};
 
-mod operation;
+pub mod operation;
 pub use operation::Operation;
 
 /// Create a new left-right data structure.

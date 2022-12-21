@@ -65,3 +65,28 @@ pub unsafe trait Operation<T> {
         self.apply(target);
     }
 }
+
+/// Operation that overwrites the value.
+pub struct OverwriteOperation<T> {
+    value: T,
+}
+
+impl<T> OverwriteOperation<T> {
+    /// Create a new `OverwriteOperation`.
+    pub const fn new(value: T) -> OverwriteOperation<T> {
+        OverwriteOperation { value }
+    }
+}
+
+unsafe impl<T> Operation<T> for OverwriteOperation<T>
+where
+    T: Clone,
+{
+    fn apply(&self, target: &mut T) {
+        target.clone_from(&self.value);
+    }
+
+    fn apply_again(self, target: &mut T) {
+        *target = self.value;
+    }
+}

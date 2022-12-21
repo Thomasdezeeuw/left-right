@@ -5,7 +5,7 @@ use std::sync::{Arc, Barrier};
 use std::task::{self, Poll};
 use std::thread;
 
-use left_right::Operation;
+use left_right::operation::{Operation, OverwriteOperation};
 
 enum TestOperation {
     Append(&'static str),
@@ -234,6 +234,16 @@ fn writer_flush_future_polled_after_completion() {
     assert_eq!(unsafe { reader.read().deref() }, writer.deref());
 
     assert_eq!(wake_count, 0);
+}
+
+#[test]
+fn overwrite_operation_works() {
+    let (mut writer, handle) = unsafe { left_right::new("", "") };
+    let reader = handle.into_reader();
+
+    writer.apply(OverwriteOperation::new("test"));
+    writer.blocking_flush();
+    assert_eq!(unsafe { *reader.read().deref() }, "test");
 }
 
 fn new_count_waker() -> (task::Waker, AwokenCount) {
