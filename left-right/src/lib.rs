@@ -750,9 +750,36 @@ mod waker {
             // before attempt to set it again.
             self.clear();
 
+            // The call to `clear` above should have clear the `Waker`. However
+            // `Waker::clear` only checks the `data` field and assumes that if
+            // the `data` field is null, then so is the `vtable` field. But this
+            // is not entirely true. It could be that another threads read
+            // `data`, but hasn't had the change yet to read `vtable`, meaning
+            // it's not null.
+            //
+            // If we would use a `store` here the other thread would read the
+            // new `vtable` and use that (incorrectly) with the old data. So, we
+            // need this `compare_exchange` loop to ensure we're not overwriting
+            // a not null value.
+            //
+            // Our thread            | Other thread
+            // `set_raw`             | `wake`
+            // `clear`               | read `data` -> data A
+            // read `data` -> null   | swap `data` -> data A
+            // store data B `vtable` | read `vtable` -> data B
+            //                       | calls waker with `data` A , `vtable` B -> error.
+            loop {
+                match self.vtable.compare_exchange_weak(
+                    ptr::null_mut(),
+                    vtable,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(_) => std::hint::spin_loop(),
+                }
+            }
             debug_assert!(self.data.load(Ordering::Relaxed).is_null());
-            debug_assert!(self.vtable.load(Ordering::Relaxed).is_null());
-            self.vtable.store(vtable, Ordering::Release);
             self.data.store(data, Ordering::SeqCst);
         }
 
