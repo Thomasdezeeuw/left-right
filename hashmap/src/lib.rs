@@ -331,6 +331,14 @@ impl<K, V, S> Reader<K, V, S> {
         unsafe { self.read().keys().cloned().collect() }
     }
 
+    /// Returns all values.
+    pub fn values(&self) -> Vec<V>
+    where
+        V: Clone,
+    {
+        unsafe { self.read().values().cloned().collect() }
+    }
+
     /// Returns itself as a clone of the underlying `HashMap`.
     pub fn to_hashmap(&self) -> HashMap<K, V, S>
     where
