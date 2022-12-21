@@ -42,6 +42,10 @@ jobs:
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@v2
+    - name: Use Nightly Rust
+      run: |
+        rustup install nightly
+        rustup default nightly
     - name: Clippy
       run: cargo clippy --all-targets
   Docs:
@@ -49,6 +53,10 @@ jobs:
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@v2
+    - name: Use Nightly Rust
+      run: |
+        rustup install nightly
+        rustup default nightly
     - name: Check docs
       run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
   Rustfmt:
