@@ -106,7 +106,10 @@ where
 
 /// Write access to the hashmap.
 ///
-/// Write access is limited to insertions and removals.
+/// # Notes
+///
+/// Any changes made to the `Writer` are not available to the readers until
+/// [`Writer::flush`] is called.
 ///
 /// # Examples
 ///
@@ -214,12 +217,6 @@ where
     }
 
     /// Inserts a key-value pair into the map, returning the old value if any.
-    ///
-    /// # Notes
-    ///
-    /// To make this available to the readers you have to call [`flush`] first.
-    ///
-    /// [`flush`]: Writer::flush
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         // SAFETY: we're replicating the insert below.
         let old_value = unsafe { self.inner.access_mut().insert(key.clone(), value.clone()) };
@@ -232,12 +229,6 @@ where
 
     /// Removes `key` from the map, returning the value at the key if the key
     /// was previously in the map.
-    ///
-    /// # Notes
-    ///
-    /// To make this available to the readers you have to call [`flush`] first.
-    ///
-    /// [`flush`]: Writer::flush
     pub fn remove(&mut self, key: K) -> Option<V> {
         // SAFETY: we're replicating the remove below.
         let value = unsafe { self.inner.access_mut().remove(&key) };
@@ -268,12 +259,6 @@ where
 
     /// Clears the map, removing all key-value pairs. Keeps the allocated memory
     /// for reuse.
-    ///
-    /// # Notes
-    ///
-    /// To make this available to the readers you have to call [`flush`] first.
-    ///
-    /// [`flush`]: Writer::flush
     pub fn clear(&mut self) {
         self.inner.apply(Operation::Clear);
     }
@@ -347,7 +332,7 @@ impl<K, V, S> Reader<K, V, S> {
     }
 
     /// Returns itself as a clone of the underlying `HashMap`.
-    pub fn as_hashmap(&self) -> HashMap<K, V, S>
+    pub fn to_hashmap(&self) -> HashMap<K, V, S>
     where
         K: Clone,
         V: Clone,
