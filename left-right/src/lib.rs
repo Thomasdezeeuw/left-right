@@ -34,11 +34,22 @@ pub unsafe fn new<T, O>(left: T, right: T) -> (Writer<T, O>, Handle<T>) {
 ///
 /// # Safety
 ///
-/// This function is safe because it assume that the [`Default`] implementation
+/// This function is safe because it assumes that the [`Default`] implementation
 /// for `T` always returns the same value. If this is not the case the left and
 /// right copies will be out of sync.
 pub fn new_from_default<T: Default, O>() -> (Writer<T, O>, Handle<T>) {
     unsafe { new(T::default(), T::default()) }
+}
+
+/// Create a new left-right data structure by cloning `value`.
+///
+/// # Safety
+///
+/// This function is safe because it assumes that the [`Clone`] implementation
+/// for `T` returns the same value as `value`. If this is not the case the left
+/// and right copies will be out of sync.
+pub fn new_cloned<T: Clone, O>(value: T) -> (Writer<T, O>, Handle<T>) {
+    unsafe { new(value.clone(), value) }
 }
 
 /// Write access to the left-right data structure.

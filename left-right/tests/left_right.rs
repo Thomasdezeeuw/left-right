@@ -30,7 +30,7 @@ fn writer_apply_does_not_apply_to_reader_copy() {
 
 #[test]
 fn writer_apply_to_reader_copy_does_not_apply_to_writer_copy() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) = left_right::new_cloned(String::new());
     let reader = handle.into_reader();
 
     unsafe { writer.apply_to_reader_copy(TestOperation::Append("test")) };
