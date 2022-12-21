@@ -35,7 +35,7 @@ fn writer_apply_to_reader_copy_does_not_apply_to_writer_copy() {
 
     unsafe { writer.apply_to_reader_copy(TestOperation::Append("test")) };
     assert_eq!(writer.deref(), "");
-    assert_eq!(unsafe { reader.read().deref() }, "");
+    assert_eq!(reader.clone_value(), "");
 }
 
 #[test]

@@ -289,7 +289,8 @@ impl<T> Reader<T> {
     /// # Safety
     ///
     /// The caller must ensure that no two `ReadGuard`s are alive on the same
-    /// thread.
+    /// thread. This means that no other method may be called on **any**
+    /// `Reader` (not just this one) while `ReadGuard` is alive.
     pub unsafe fn read<'a>(&'a self) -> ReadGuard<'a, T> {
         let shared = self.handle.shared.as_ref();
         ReadGuard {
@@ -298,6 +299,14 @@ impl<T> Reader<T> {
             epoch_index: self.epoch_index,
             _not_send: PhantomData,
         }
+    }
+
+    /// Returns a clone of the value.
+    pub fn clone_value(&self) -> T
+    where
+        T: Clone,
+    {
+        unsafe { self.read().deref().clone() }
     }
 
     /// Create new a `Handle` from this `Reader` so it can be moved across
