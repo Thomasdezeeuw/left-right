@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::task::{self, Poll};
-use std::thread;
+use std::{panic, thread};
 
 use left_right::operation::{Operation, OverwriteOperation};
 
@@ -17,6 +17,31 @@ unsafe impl Operation<String> for TestOperation {
             TestOperation::Append(str) => target.push_str(str),
         }
     }
+}
+
+#[test]
+fn read_guard_map() {
+    let (_, handle) = left_right::new_cloned::<_, TestOperation>(String::from("Hello"));
+    let reader = handle.into_reader();
+
+    unsafe { need_bytes(reader.read().map(|s| s.as_bytes()).deref()) };
+    fn need_bytes(b: &[u8]) {
+        assert_eq!(b, b"Hello");
+    }
+}
+
+#[test]
+fn read_guard_map_panic() {
+    let (_, handle) = left_right::new_cloned::<_, TestOperation>(String::from("Hello"));
+    let reader = handle.into_reader();
+
+    match panic::catch_unwind(|| unsafe { reader.read().map(|_| -> &str { panic!("oops") }) }) {
+        Ok(_) => panic!("unexpected Ok"),
+        Err(_) => { /* Expected. */ }
+    }
+
+    // The read should still be usable.
+    assert_eq!(unsafe { reader.read().deref() }, "Hello");
 }
 
 #[test]

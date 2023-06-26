@@ -4,6 +4,7 @@
 
 use std::future::Future;
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 use std::num::NonZeroU64;
 use std::ops::Deref;
 use std::pin::Pin;
@@ -339,16 +340,38 @@ impl<T> Clone for Reader<T> {
 
 /// Similar to a mutex guard this protects the data structure so that the read
 /// access is properly synchronised with possible concurrent writes.
-pub struct ReadGuard<'a, T> {
+pub struct ReadGuard<'a, T: ?Sized> {
     value: &'a T,
     status: Pin<&'a Status>,
     epoch_index: NonZeroU64,
-    /// The `Reader` must be `!Send` as the epoch index is based on the thread
-    /// id, which will change if we change threads.
+    /// The `ReaderGuard` must be `!Send` as the epoch index is based on the
+    /// thread id, which will change if we change threads.
     _not_send: PhantomData<*const ()>,
 }
 
-impl<'a, T> Deref for ReadGuard<'a, T> {
+impl<'a, T: ?Sized> ReadGuard<'a, T> {
+    /// Map the value `T` to `U`.
+    //#[rustfmt::skip]
+    pub fn map<F, U>(self, map: F) -> ReadGuard<'a, U>
+    where
+        F: FnOnce(&'a T) -> &'a U,
+        U: ?Sized,
+    {
+        // NOTE: we need to call the `map` function before using `ManuallyDrop`
+        // below in case of panics.
+        let new_value = map(self.value);
+        // Don't drop the old guard as that will change our epoch.
+        let guard = ManuallyDrop::new(self);
+        ReadGuard {
+            value: new_value,
+            status: guard.status,
+            epoch_index: guard.epoch_index,
+            _not_send: PhantomData,
+        }
+    }
+}
+
+impl<'a, T: ?Sized> Deref for ReadGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -356,7 +379,7 @@ impl<'a, T> Deref for ReadGuard<'a, T> {
     }
 }
 
-impl<'a, T> Drop for ReadGuard<'a, T> {
+impl<'a, T: ?Sized> Drop for ReadGuard<'a, T> {
     fn drop(&mut self) {
         self.status.mark_done_reading(self.epoch_index);
     }
