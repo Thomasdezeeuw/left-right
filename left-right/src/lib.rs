@@ -80,9 +80,8 @@ where
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `operation` (equivalent) operation is
-    /// already applied to the writer's copy, otherwise the two would go out of
-    /// sync.
+    /// The caller must ensure that `operation` (equivalent) is already applied
+    /// to the writer's copy, otherwise the two would go out of sync.
     pub unsafe fn apply_to_reader_copy(&mut self, operation: O) {
         self.log.push(operation);
     }
@@ -111,7 +110,7 @@ where
 
         // Next apply all operations we applied to the old writer copy to the
         // new copy to ensure both are in sync again.
-        // SAFETY: We're the `Writer`.
+        // SAFETY: we're the `Writer`.
         let value = unsafe { self.shared.as_ref().writer_access_mut() };
         for operation in self.log.drain(..) {
             operation.apply_again(&mut *value);
@@ -134,7 +133,7 @@ where
     /// # Safety
     ///
     /// If the returned [`Flush`] `Future` is not polled to completion **and**
-    /// leaked `Writer` will be an invalid state not safe to use any more.
+    /// it is leaked `Writer` will be an invalid state not safe to use any more.
     pub fn flush<'a>(&'a mut self) -> Flush<'a, T, O> {
         // This follows the same pattern as [`Writer::blocking_flush`].
 
@@ -160,7 +159,7 @@ where
     }
 
     fn value_mut(&mut self) -> &mut T {
-        // SAFETY: We're the `Writer`.
+        // SAFETY: we're the `Writer`.
         unsafe { self.shared.as_ref().writer_access_mut() }
     }
 }
@@ -169,7 +168,7 @@ impl<T, O> Deref for Writer<T, O> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // SAFETY: We're the `Writer`.
+        // SAFETY: we're the `Writer`.
         unsafe { self.shared.as_ref().writer_access() }
     }
 }
@@ -188,7 +187,7 @@ impl<'a, T, O: Operation<T>> Flush<'a, T, O> {
     /// Caller must ensure that all readers have switched to the new copy, by
     /// calling [`Shared::all_readers_switched`].
     unsafe fn apply_operations(&mut self) {
-        // SAFETY: We're the `Writer`.
+        // SAFETY: we're the `Writer`.
         let value = unsafe { self.writer.shared.as_ref().writer_access_mut() };
         for operation in self.writer.log.drain(..) {
             operation.apply_again(&mut *value);
@@ -212,10 +211,10 @@ impl<'a, T, O: Operation<T>> Future for Flush<'a, T, O> {
         }
 
         // Make sure we get polled again.
-        shared.waker.set_task_waker(ctx.waker().clone());
+        shared.set_writer_task_waker(ctx.waker().clone());
 
         if shared.all_readers_switched(&mut this.writer.last_seen_epochs) {
-            shared.waker.clear();
+            shared.clear_writer_waker();
             unsafe { this.apply_operations() };
             return Poll::Ready(());
         }
@@ -373,7 +372,7 @@ mod shared {
     use std::pin::Pin;
     use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
     use std::sync::{Arc, RwLock};
-    use std::{ptr, thread};
+    use std::{ptr, task, thread};
 
     use super::waker::Waker;
 
@@ -396,7 +395,7 @@ mod shared {
         /// Maybe only be accessed by the writer.
         reading: UnsafeCell<Reading>,
         /// Waker for the writer.
-        pub(super) waker: Waker,
+        waker: Waker,
         /// Left copy.
         /// Maybe only be accessed by the writer **iff** `read` is currently
         /// pointing to `right`.
@@ -456,6 +455,16 @@ mod shared {
                 Reading::Left => &mut *self.right.get(),
                 Reading::Right => &mut *self.left.get(),
             }
+        }
+
+        /// Set the writer's waker to `task_waker`.
+        pub(super) fn set_writer_task_waker(self: Pin<&Self>, task_waker: task::Waker) {
+            self.waker.set_task_waker(task_waker);
+        }
+
+        /// Clear the writer's waker.
+        pub(super) fn clear_writer_waker(self: Pin<&Self>) {
+            self.waker.clear();
         }
 
         /// Switch the pointer to the other copy.
@@ -713,7 +722,7 @@ mod waker {
         /// Caller must ensure `data` and `vtable` are correct according to the
         /// `Waker.data` and `Waker.vtable` docs.
         unsafe fn set_raw(&self, data: *mut (), vtable: *mut ()) {
-            // Spurious thread wake-ups can happend and a `Future` should always
+            // Spurious thread wake-ups can happen and a `Future` should always
             // be pollable. So, we need to ensure the waker is in a clear state
             // before attempt to set it again.
             self.clear();
@@ -799,10 +808,10 @@ mod waker {
                     vtable => unsafe {
                         debug_assert!(!vtable.is_null());
 
-                        // SAFETY: See Waker::waker.
+                        // SAFETY: see Waker::waker.
                         let vtable: &'static task::RawWakerVTable = &*vtable.cast();
                         let raw = task::RawWaker::new(data, vtable);
-                        // SAFETY: See Waker::waker.
+                        // SAFETY: see Waker::waker.
                         drop(task::Waker::from_raw(raw));
                     },
                 }
