@@ -389,13 +389,11 @@ mod shared {
         /// This must always point to either `left` or `right` and must be valid
         /// for at least as long as `Shared` lives.
         read: AtomicPtr<T>,
-        /// Epochs for the readers.
-        read_epochs: RwLock<Vec<AtomicUsize>>,
+        /// Status
+        status: Status,
         /// Is `read` pointing to `left` or `right?
         /// Maybe only be accessed by the writer.
         reading: UnsafeCell<Reading>,
-        /// Waker for the writer.
-        waker: Waker,
         /// Left copy.
         /// Maybe only be accessed by the writer **iff** `read` is currently
         /// pointing to `right`.
@@ -404,6 +402,17 @@ mod shared {
         /// Maybe only be accessed by the writer **iff** `read` is currently
         /// pointing to `left`.
         right: UnsafeCell<T>,
+    }
+
+    /// Status of [`Shared`].
+    ///
+    /// This is a separate type so it can be used in `ReadGuard` without a type,
+    /// allowing `ReadGuard::map` to exist.
+    struct Status {
+        /// Epochs for the readers.
+        read_epochs: RwLock<Vec<AtomicUsize>>,
+        /// Waker for the writer.
+        waker: Waker,
     }
 
     /// Are we writing to the left or right data structure?
@@ -419,9 +428,11 @@ mod shared {
         pub(super) unsafe fn new(left: T, right: T) -> Pin<Arc<Shared<T>>> {
             let shared = Arc::pin(Shared {
                 read: AtomicPtr::new(ptr::null_mut()), // NOTE: set below.
-                read_epochs: RwLock::new(Vec::new()),
+                status: Status {
+                    read_epochs: RwLock::new(Vec::new()),
+                    waker: Waker::new(),
+                },
                 reading: UnsafeCell::new(Reading::Left),
-                waker: Waker::new(),
                 left: UnsafeCell::new(left),
                 right: UnsafeCell::new(right),
             });
@@ -459,12 +470,12 @@ mod shared {
 
         /// Set the writer's waker to `task_waker`.
         pub(super) fn set_writer_task_waker(self: Pin<&Self>, task_waker: task::Waker) {
-            self.waker.set_task_waker(task_waker);
+            self.status.waker.set_task_waker(task_waker);
         }
 
         /// Clear the writer's waker.
         pub(super) fn clear_writer_waker(self: Pin<&Self>) {
-            self.waker.clear();
+            self.status.waker.clear();
         }
 
         /// Switch the pointer to the other copy.
@@ -512,11 +523,12 @@ mod shared {
             // state.
         }
 
-        /// Fills `epochs` with the values of `self.read_epochs`.
+        /// Fills `epochs` with the values of `self.status.read_epochs`.
         pub(super) fn fill_epochs(self: Pin<&Self>, epochs: &mut Vec<usize>) {
             epochs.clear();
             epochs.extend(
-                self.read_epochs
+                self.status
+                    .read_epochs
                     .read()
                     .unwrap()
                     .iter()
@@ -539,7 +551,7 @@ mod shared {
             // of `>` because the epoch can wrap around (after 2^63 reads).
             zip(
                 current_epochs.iter_mut(),
-                self.read_epochs.read().unwrap().iter(),
+                self.status.read_epochs.read().unwrap().iter(),
             )
             .all(|(ce, ne)| {
                 // If we know the reader is not accessing the value we don't
@@ -574,13 +586,13 @@ mod shared {
                 // Mark ourselves as parked, this ensures that the readers will
                 // unpark us.
                 let thread = thread::current();
-                self.waker.set_thread(thread);
+                self.status.waker.set_thread(thread);
 
                 // Before we can park ourselves we have to check the readers
                 // epochs again. This is to prevent a race between the last time
                 // we checked the reader epochs and marked ourselves as parked.
                 if self.all_readers_switched(current_epochs) {
-                    self.waker.clear();
+                    self.status.waker.clear();
                     return;
                 }
 
@@ -592,11 +604,11 @@ mod shared {
         pub(super) fn epoch_index(self: Pin<&Self>) -> NonZeroU64 {
             let index = thread::current().id().as_u64();
             let length_required = (index.get() + 1) as usize;
-            if self.read_epochs.read().unwrap().len() < length_required {
+            if self.status.read_epochs.read().unwrap().len() < length_required {
                 // Not enough epoch allocated, allocate them now, but first
                 // check the epochs haven't changed in the time between
                 // releasing the read lock and acquiring the write lock.
-                let mut epochs = self.read_epochs.write().unwrap();
+                let mut epochs = self.status.read_epochs.write().unwrap();
                 if epochs.len() < length_required {
                     epochs.resize_with(length_required, || AtomicUsize::new(0));
                 }
@@ -608,7 +620,7 @@ mod shared {
         pub(super) fn mark_reading<'a>(self: Pin<&'a Self>, epoch_index: NonZeroU64) -> &'a T {
             // SAFETY: `epoch_index` ensures the `read_epochs` vector is long
             // enough to make this index safe.
-            let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
+            let old_epoch = self.status.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
             debug_assert!(
                 old_epoch % 2 == 0,
@@ -622,10 +634,10 @@ mod shared {
         pub(super) fn mark_done_reading(self: Pin<&Self>, epoch_index: NonZeroU64) {
             // SAFETY: `epoch_index` ensures the `read_epochs` vector is long
             // enough to make this index safe.
-            let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
+            let old_epoch = self.status.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
             debug_assert!(old_epoch % 2 == 1, "invalid epoch state");
-            self.waker.wake()
+            self.status.waker.wake()
         }
     }
 
