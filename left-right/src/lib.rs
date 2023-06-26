@@ -294,7 +294,7 @@ impl<T> Reader<T> {
         let shared = self.handle.shared.as_ref();
         ReadGuard {
             value: shared.mark_reading(self.epoch_index),
-            shared,
+            status: shared.status(),
             epoch_index: self.epoch_index,
             _not_send: PhantomData,
         }
@@ -341,7 +341,7 @@ impl<T> Clone for Reader<T> {
 /// access is properly synchronised with possible concurrent writes.
 pub struct ReadGuard<'a, T> {
     value: &'a T,
-    shared: Pin<&'a Shared<T>>,
+    status: Pin<&'a Status>,
     epoch_index: NonZeroU64,
     /// The `Reader` must be `!Send` as the epoch index is based on the thread
     /// id, which will change if we change threads.
@@ -358,7 +358,7 @@ impl<'a, T> Deref for ReadGuard<'a, T> {
 
 impl<'a, T> Drop for ReadGuard<'a, T> {
     fn drop(&mut self) {
-        self.shared.mark_done_reading(self.epoch_index);
+        self.status.mark_done_reading(self.epoch_index);
     }
 }
 
@@ -408,7 +408,7 @@ mod shared {
     ///
     /// This is a separate type so it can be used in `ReadGuard` without a type,
     /// allowing `ReadGuard::map` to exist.
-    struct Status {
+    pub(super) struct Status {
         /// Epochs for the readers.
         read_epochs: RwLock<Vec<AtomicUsize>>,
         /// Waker for the writer.
@@ -440,6 +440,11 @@ mod shared {
                 .read
                 .store(&shared.left as *const _ as *mut _, Ordering::Relaxed);
             shared
+        }
+
+        /// Returns a pinned reference to `Status`.
+        pub(super) fn status(self: Pin<&Self>) -> Pin<&Status> {
+            unsafe { Pin::map_unchecked(self, |s| &s.status) }
         }
 
         /// Get read access to the `Writer`'s copy of data structure.
@@ -629,15 +634,17 @@ mod shared {
             // SAFETY: safe based on the requirements on `Shared.read`.
             unsafe { &*self.read.load(Ordering::SeqCst) }
         }
+    }
 
+    impl Status {
         /// Mark thread with `epoch_index` as done reading.
         pub(super) fn mark_done_reading(self: Pin<&Self>, epoch_index: NonZeroU64) {
             // SAFETY: `epoch_index` ensures the `read_epochs` vector is long
             // enough to make this index safe.
-            let old_epoch = self.status.read_epochs.read().unwrap()[epoch_index.get() as usize]
+            let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
             debug_assert!(old_epoch % 2 == 1, "invalid epoch state");
-            self.status.waker.wake()
+            self.waker.wake()
         }
     }
 
@@ -647,7 +654,7 @@ mod shared {
     impl<T: RefUnwindSafe> RefUnwindSafe for Shared<T> {}
 }
 
-use shared::Shared;
+use shared::{Shared, Status};
 
 mod waker {
     //! Module to make the fields in [`Waker`] private.
