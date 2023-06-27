@@ -1,8 +1,0 @@
-[package]
-name          = "hashmap"
-version       = "0.1.0"
-authors       = ["Thomas de Zeeuw <thomasdezeeuw@gmail.com>"]
-edition       = "2021"
-
-[dependencies]
-left-right = { version = "0.1.0", path = "../left-right", default-features = false }

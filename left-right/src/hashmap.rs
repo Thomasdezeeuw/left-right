@@ -8,7 +8,7 @@
 //! [flushed]: Writer::flush
 //!
 //! ```
-//! let (mut writer, handle) = hashmap::new();
+//! let (mut writer, handle) = left_right::hashmap::new();
 //! let handle2 = handle.clone();
 //! let mut reader1 = handle.into_reader();
 //!
@@ -84,7 +84,7 @@ where
     let left = HashMap::with_hasher(hasher.clone());
     let right = HashMap::with_hasher(hasher);
     // SAFETY: `left` and `right` are the same.
-    let (writer, handle) = unsafe { left_right::new(left, right) };
+    let (writer, handle) = unsafe { crate::new(left, right) };
     (Writer { inner: writer }, Handle { inner: handle })
 }
 
@@ -100,7 +100,7 @@ where
     let left = HashMap::with_capacity_and_hasher(capacity, hasher.clone());
     let right = HashMap::with_capacity_and_hasher(capacity, hasher);
     // SAFETY: `left` and `right` are the same.
-    let (writer, handle) = unsafe { left_right::new(left, right) };
+    let (writer, handle) = unsafe { crate::new(left, right) };
     (Writer { inner: writer }, Handle { inner: handle })
 }
 
@@ -119,7 +119,7 @@ where
 /// [flushed]: Writer::flush
 ///
 /// ```
-/// let (mut writer, handle) = hashmap::new();
+/// let (mut writer, handle) = left_right::hashmap::new();
 /// let mut reader = handle.into_reader();
 ///
 /// writer.insert("key", "value");
@@ -135,12 +135,12 @@ where
 /// assert_eq!(reader.len(), 1);
 /// ```
 pub struct Writer<K, V, S = RandomState> {
-    inner: left_right::Writer<HashMap<K, V, S>, Operation<K, V>>,
+    inner: crate::Writer<HashMap<K, V, S>, Operation<K, V>>,
 }
 
 /// Writer [operation] for [`Writer`].
 ///
-/// [operation]: left_right::Operation
+/// [operation]: crate::Operation
 enum Operation<K, V> {
     Reserve(usize),
     ShrinkToFit,
@@ -150,7 +150,7 @@ enum Operation<K, V> {
     Clear,
 }
 
-unsafe impl<K, V, S> left_right::Operation<HashMap<K, V, S>> for Operation<K, V>
+unsafe impl<K, V, S> crate::Operation<HashMap<K, V, S>> for Operation<K, V>
 where
     K: Clone + Eq + Hash,
     V: Clone,
@@ -287,7 +287,7 @@ impl<K, V, S> Deref for Writer<K, V, S> {
 /// [`clone`]: Clone
 #[derive(Clone)]
 pub struct Handle<K, V, S = RandomState> {
-    inner: left_right::Handle<HashMap<K, V, S>>,
+    inner: crate::Handle<HashMap<K, V, S>>,
 }
 
 impl<K, V, S> Handle<K, V, S> {
@@ -304,7 +304,7 @@ impl<K, V, S> Handle<K, V, S> {
 /// A `Reader` is always bound to a thread and is thus not [`Send`], to move a
 /// reader across first convert into a [`Handle`].
 pub struct Reader<K, V, S = RandomState> {
-    inner: left_right::Reader<HashMap<K, V, S>>,
+    inner: crate::Reader<HashMap<K, V, S>>,
 }
 
 impl<K, V, S> Reader<K, V, S> {
@@ -444,7 +444,7 @@ impl<K, V, S> Clone for Reader<K, V, S> {
 ///
 /// At most one `ReadGuard` may be alive per thread.
 pub struct ReadGuard<'a, K, V, S> {
-    inner: left_right::ReadGuard<'a, HashMap<K, V, S>>,
+    inner: crate::ReadGuard<'a, HashMap<K, V, S>>,
 }
 
 impl<'a, K, V, S> Deref for ReadGuard<'a, K, V, S> {

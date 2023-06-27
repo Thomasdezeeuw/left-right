@@ -14,6 +14,8 @@ use std::task::{self, Poll};
 pub mod operation;
 pub use operation::Operation;
 
+pub mod hashmap;
+
 /// Create a new left-right data structure.
 ///
 /// # Safety
