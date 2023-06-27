@@ -54,7 +54,7 @@
 //! // To get an updated view simply drop the read guard and continue using the
 //! // reader. Dropping the read guard will unblock the writer's call to flush.
 //! drop(read_guard1);
-//! assert_eq!(reader1.get("key"), Some("value"));
+//! assert_eq!(reader1.get_cloned("key"), Some("value"));
 //! assert_eq!(reader1.len(), 1);
 //! #
 //! # handle1.join().unwrap();
@@ -132,7 +132,7 @@ where
 ///
 /// // After the writer flushes the changes become visible to the readers.
 /// writer.blocking_flush();
-/// assert_eq!(reader.get("key"), Some("value"));
+/// assert_eq!(reader.get_cloned("key"), Some("value"));
 /// assert_eq!(reader.len(), 1);
 /// ```
 pub struct Writer<K, V, S = RandomState> {
@@ -328,7 +328,7 @@ impl<K, V, S> Reader<K, V, S> {
     }
 
     /// Returns all keys.
-    pub fn keys(&self) -> Vec<K>
+    pub fn keys_cloned(&self) -> Vec<K>
     where
         K: Clone,
     {
@@ -336,7 +336,7 @@ impl<K, V, S> Reader<K, V, S> {
     }
 
     /// Returns all values.
-    pub fn values(&self) -> Vec<V>
+    pub fn values_cloned(&self) -> Vec<V>
     where
         V: Clone,
     {
@@ -344,7 +344,7 @@ impl<K, V, S> Reader<K, V, S> {
     }
 
     /// Returns all key-value pairs.
-    pub fn key_values(&self) -> Vec<(K, V)>
+    pub fn key_values_cloned(&self) -> Vec<(K, V)>
     where
         K: Clone,
         V: Clone,
@@ -358,7 +358,7 @@ impl<K, V, S> Reader<K, V, S> {
     }
 
     /// Returns itself as a clone of the underlying `HashMap`.
-    pub fn to_hashmap(&self) -> HashMap<K, V, S>
+    pub fn clone_hashmap(&self) -> HashMap<K, V, S>
     where
         K: Clone,
         V: Clone,
@@ -394,7 +394,7 @@ where
     S: BuildHasher,
 {
     /// Returns a clone of to the value corresponding to the `key`.
-    pub fn get<Q>(&self, key: &Q) -> Option<V>
+    pub fn get_cloned<Q>(&self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -404,7 +404,7 @@ where
     }
 
     /// Returns a clone of to the key-value pair corresponding to the `key`.
-    pub fn get_key_value<Q>(&self, key: &Q) -> Option<(K, V)>
+    pub fn get_key_value_cloned<Q>(&self, key: &Q) -> Option<(K, V)>
     where
         K: Clone + Borrow<Q>,
         Q: Hash + Eq + ?Sized,
