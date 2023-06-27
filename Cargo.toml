@@ -1,6 +1,5 @@
-[workspace]
-resolver = "2"
-members = [
-    "left-right",
-    "hashmap",
-]
+[package]
+name          = "left-right"
+version       = "0.1.0"
+authors       = ["Thomas de Zeeuw <thomasdezeeuw@gmail.com>"]
+edition       = "2021"
