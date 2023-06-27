@@ -383,10 +383,8 @@ impl<K, V, S> Reader<K, V, S> {
     ///
     /// At most one `ReadGuard` may be alive per thread. No other method on the
     /// type may be called while the `ReadGuard` is alive on this thread.
-    pub unsafe fn read<'a>(&'a self) -> ReadGuard<'a, K, V, S> {
-        ReadGuard {
-            inner: self.inner.read(),
-        }
+    pub unsafe fn read<'a>(&'a self) -> crate::ReadGuard<'a, HashMap<K, V, S>> {
+        self.inner.read()
     }
 }
 
@@ -438,23 +436,5 @@ impl<K, V, S> Clone for Reader<K, V, S> {
 
     fn clone_from(&mut self, source: &Reader<K, V, S>) {
         self.inner.clone_from(&source.inner);
-    }
-}
-
-/// Similar to a mutex guard this protects the data structure so that the read
-/// access is properly synchronised with possible concurrent writes.
-///
-/// # Safety
-///
-/// At most one `ReadGuard` may be alive per thread.
-pub struct ReadGuard<'a, K, V, S> {
-    inner: crate::ReadGuard<'a, HashMap<K, V, S>>,
-}
-
-impl<'a, K, V, S> Deref for ReadGuard<'a, K, V, S> {
-    type Target = HashMap<K, V, S>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.deref()
     }
 }
