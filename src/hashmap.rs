@@ -63,6 +63,7 @@
 
 use std::borrow::Borrow;
 use std::collections::hash_map::{Drain, HashMap, RandomState};
+use std::future::Future;
 use std::hash::{BuildHasher, Hash};
 use std::ops::Deref;
 
@@ -266,6 +267,12 @@ where
     /// Flush all previously made changes so that the readers can see them.
     pub fn blocking_flush(&mut self) {
         self.inner.blocking_flush();
+    }
+
+    /// Asynchronously flush all previously made changes so that the readers can
+    /// see them.
+    pub fn flush<'a>(&'a mut self) -> impl Future<Output = ()> + 'a {
+        self.inner.flush()
     }
 }
 
