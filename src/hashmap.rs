@@ -52,7 +52,7 @@
 //! assert!(read_guard1.is_empty());
 //!
 //! // To get an updated view simply drop the read guard and continue using the
-//! // reader. Blocking the read guard will unblock the writer's call to flush.
+//! // reader. Dropping the read guard will unblock the writer's call to flush.
 //! drop(read_guard1);
 //! assert_eq!(reader1.get("key"), Some("value"));
 //! assert_eq!(reader1.len(), 1);
@@ -286,12 +286,9 @@ impl<K, V, S> Deref for Writer<K, V, S> {
 
 /// A handle to the hashmap that provides no access.
 ///
-/// With this handle you can do three things:
-///  * Move it to another thread ([`Reader`]s can't be moved across threads).
-///  * Convert it into a [`Reader`].
-///  * Cheaply [`clone`] it.
+/// See [`left_right::Handle`] for more information on usage.
 ///
-/// [`clone`]: Clone
+/// [`left_right::Handle`]: crate::Handle
 #[derive(Clone)]
 pub struct Handle<K, V, S = RandomState> {
     inner: crate::Handle<HashMap<K, V, S>>,
@@ -309,7 +306,7 @@ impl<K, V, S> Handle<K, V, S> {
 /// Read access to the hashmap.
 ///
 /// A `Reader` is always bound to a thread and is thus not [`Send`], to move a
-/// reader across first convert into a [`Handle`].
+/// reader across thread bounds first convert it into a [`Handle`].
 pub struct Reader<K, V, S = RandomState> {
     inner: crate::Reader<HashMap<K, V, S>>,
 }
