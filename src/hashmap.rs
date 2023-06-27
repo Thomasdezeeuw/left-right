@@ -29,7 +29,7 @@
 //!     // Only after the writer flushes, the changes become visible to the
 //!     // readers. This will block until all readers stopped reading the
 //!     // current version. This will happen once all read guards are dropped.
-//!     writer.flush();
+//!     writer.blocking_flush();
 //! });
 //! #
 //! # // Yey, sleep based concurrency!
@@ -130,7 +130,7 @@ where
 /// assert!(reader.is_empty());
 ///
 /// // After the writer flushes the changes become visible to the readers.
-/// writer.flush();
+/// writer.blocking_flush();
 /// assert_eq!(reader.get("key"), Some("value"));
 /// assert_eq!(reader.len(), 1);
 /// ```
@@ -264,7 +264,7 @@ where
     }
 
     /// Flush all previously made changes so that the readers can see them.
-    pub fn flush(&mut self) {
+    pub fn blocking_flush(&mut self) {
         self.inner.blocking_flush();
     }
 }
