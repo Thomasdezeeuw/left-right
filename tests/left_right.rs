@@ -278,6 +278,22 @@ fn overwrite_operation_works() {
     assert_eq!(unsafe { *reader.read().deref() }, "test");
 }
 
+#[test]
+fn overwrite_operation_log_works() {
+    let (mut writer, handle) =
+        unsafe { left_right::new::<_, Option<OverwriteOperation<_>>>("", "") };
+    let reader = handle.into_reader();
+
+    writer.apply(OverwriteOperation::new("test"));
+    writer.blocking_flush();
+    assert_eq!(unsafe { *reader.read().deref() }, "test");
+
+    writer.apply(OverwriteOperation::new("test2"));
+    writer.apply(OverwriteOperation::new("test3"));
+    writer.blocking_flush();
+    assert_eq!(unsafe { *reader.read().deref() }, "test3");
+}
+
 fn new_count_waker() -> (task::Waker, AwokenCount) {
     let inner = Arc::new(WakerInner {
         count: AtomicUsize::new(0),

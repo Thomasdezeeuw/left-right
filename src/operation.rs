@@ -67,6 +67,11 @@ pub unsafe trait Operation<T> {
 }
 
 /// Operation that overwrites the value.
+///
+/// # Notes
+///
+/// An optimised implementation of the [`Log`] trait is available in
+/// `Option<OverwriteOperation<T>>` when using this type.
 pub struct OverwriteOperation<T> {
     value: T,
 }
@@ -152,6 +157,36 @@ where
     {
         for operation in self.drain(..) {
             operation.apply_again(target);
+        }
+    }
+}
+
+/// Optimisation for [`OverwriteOperation`] where we only store the last
+/// operation as it completely overwrites the value.
+unsafe impl<T> Log<T> for Option<OverwriteOperation<T>>
+where
+    T: Clone,
+{
+    type Operation = OverwriteOperation<T>;
+
+    fn new() -> Self {
+        None
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_none()
+    }
+
+    fn push(&mut self, operation: Self::Operation) {
+        *self = Some(operation);
+    }
+
+    fn apply_and_clear(&mut self, target: &mut T)
+    where
+        Self: Sized,
+    {
+        if let Some(operation) = self.take() {
+            operation.apply_again(target)
         }
     }
 }
