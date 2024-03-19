@@ -90,3 +90,68 @@ where
         *target = self.value;
     }
 }
+
+/// [`Operation`] Log.
+///
+/// Log of operations that need to be applied to the second copy after the same
+/// operations have already been applied to the first copy.
+///
+/// The easiest and commonly used `Log` type is a `Vec`tor and will do a good
+/// job in all cases. However extraction this a trait means we can optimise for
+/// [`OverwriteOperation`].
+pub unsafe trait Log<T>: Sized {
+    type Operation: Operation<T>;
+
+    /// Create a new empty log.
+    fn new() -> Self;
+
+    /// Returns true if the log is empty, false otherwise.
+    ///
+    /// # Correctness
+    ///
+    /// This is used as an optimisation to determine when the log doesn't have
+    /// to be applied to the second copy. If this incorrectly returns true the
+    /// two copies might get out of sync.
+    fn is_empty(&self) -> bool;
+
+    /// Add `operation` to the log.
+    fn push(&mut self, operation: Self::Operation);
+
+    /// Apply all operations in the log to `target` and clear the log.
+    ///
+    /// # Correctness
+    ///
+    /// All operations in the log must be applied to ensure both copies are in
+    /// sync.
+    fn apply_and_clear(&mut self, target: &mut T)
+    where
+        Self: Sized;
+}
+
+unsafe impl<O, T> Log<T> for Vec<O>
+where
+    O: Operation<T>,
+{
+    type Operation = O;
+
+    fn new() -> Self {
+        Vec::new()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
+
+    fn push(&mut self, operation: Self::Operation) {
+        self.push(operation);
+    }
+
+    fn apply_and_clear(&mut self, target: &mut T)
+    where
+        Self: Sized,
+    {
+        for operation in self.drain(..) {
+            operation.apply_again(target);
+        }
+    }
+}
