@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::task::{self, Poll};
 
 pub mod operation;
-pub use operation::Operation;
+pub use operation::{Log, Operation};
 
 pub mod hashmap;
 
