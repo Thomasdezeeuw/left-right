@@ -21,7 +21,7 @@ unsafe impl Operation<String> for TestOperation {
 
 #[test]
 fn read_guard_map() {
-    let (_, handle) = left_right::new_cloned::<_, TestOperation>(String::from("Hello"));
+    let (_, handle) = left_right::new_cloned::<_, Vec<TestOperation>>(String::from("Hello"));
     let reader = handle.into_reader();
 
     unsafe { need_bytes(reader.read().map(|s| s.as_bytes()).deref()) };
@@ -32,7 +32,7 @@ fn read_guard_map() {
 
 #[test]
 fn read_guard_map_panic() {
-    let (_, handle) = left_right::new_cloned::<_, TestOperation>(String::from("Hello"));
+    let (_, handle) = left_right::new_cloned::<_, Vec<TestOperation>>(String::from("Hello"));
     let reader = handle.into_reader();
 
     match panic::catch_unwind(|| unsafe { reader.read().map(|_| -> &str { panic!("oops") }) }) {
@@ -46,7 +46,7 @@ fn read_guard_map_panic() {
 
 #[test]
 fn writer_apply_does_not_apply_to_reader_copy() {
-    let (mut writer, handle) = left_right::new_from_default::<String, _>();
+    let (mut writer, handle) = left_right::new_from_default::<String, Vec<_>>();
     let reader = handle.into_reader();
 
     writer.apply(TestOperation::Append("test"));
@@ -55,7 +55,7 @@ fn writer_apply_does_not_apply_to_reader_copy() {
 
 #[test]
 fn writer_apply_to_reader_copy_does_not_apply_to_writer_copy() {
-    let (mut writer, handle) = left_right::new_cloned(String::new());
+    let (mut writer, handle) = left_right::new_cloned::<_, Vec<_>>(String::new());
     let reader = handle.into_reader();
 
     unsafe { writer.apply_to_reader_copy(TestOperation::Append("test")) };
@@ -65,7 +65,8 @@ fn writer_apply_to_reader_copy_does_not_apply_to_writer_copy() {
 
 #[test]
 fn writer_blocking_flush_shows_changes_to_reader_copy() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) =
+        unsafe { left_right::new::<_, Vec<_>>(String::new(), String::new()) };
     let reader = handle.into_reader();
 
     writer.apply(TestOperation::Append("test"));
@@ -75,7 +76,8 @@ fn writer_blocking_flush_shows_changes_to_reader_copy() {
 
 #[test]
 fn writer_blocking_flush_shows_changes_to_reader_copy_on_different_thread() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) =
+        unsafe { left_right::new::<_, Vec<_>>(String::new(), String::new()) };
 
     // Stages:
     // 1. Read guard held.
@@ -112,7 +114,8 @@ fn writer_blocking_flush_shows_changes_to_reader_copy_on_different_thread() {
 
 #[test]
 fn writer_flush_shows_changes_to_reader_copy() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) =
+        unsafe { left_right::new::<_, Vec<_>>(String::new(), String::new()) };
     let reader = handle.into_reader();
 
     writer.apply(TestOperation::Append("test"));
@@ -129,7 +132,8 @@ fn writer_flush_shows_changes_to_reader_copy() {
 
 #[test]
 fn writer_flush_shows_changes_to_reader_copy_on_different_thread() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) =
+        unsafe { left_right::new::<_, Vec<_>>(String::new(), String::new()) };
 
     // Stages:
     // 1. Read guard held.
@@ -176,7 +180,8 @@ fn writer_flush_shows_changes_to_reader_copy_on_different_thread() {
 
 #[test]
 fn writer_flush_future_dropped() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) =
+        unsafe { left_right::new::<_, Vec<_>>(String::new(), String::new()) };
 
     // Stages:
     // 1. Read guard held.
@@ -216,7 +221,8 @@ fn writer_flush_future_dropped() {
 
 #[test]
 fn writer_flush_future_polled_many_times() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) =
+        unsafe { left_right::new::<_, Vec<_>>(String::new(), String::new()) };
     let reader = handle.into_reader();
 
     let read_guard = unsafe { reader.read() };
@@ -242,7 +248,8 @@ fn writer_flush_future_polled_many_times() {
 
 #[test]
 fn writer_flush_future_polled_after_completion() {
-    let (mut writer, handle) = unsafe { left_right::new(String::new(), String::new()) };
+    let (mut writer, handle) =
+        unsafe { left_right::new::<_, Vec<_>>(String::new(), String::new()) };
     let reader = handle.into_reader();
 
     writer.apply(TestOperation::Append("test"));
@@ -263,7 +270,7 @@ fn writer_flush_future_polled_after_completion() {
 
 #[test]
 fn overwrite_operation_works() {
-    let (mut writer, handle) = unsafe { left_right::new("", "") };
+    let (mut writer, handle) = unsafe { left_right::new::<_, Vec<_>>("", "") };
     let reader = handle.into_reader();
 
     writer.apply(OverwriteOperation::new("test"));

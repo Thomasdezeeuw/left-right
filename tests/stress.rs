@@ -22,7 +22,7 @@ unsafe impl Operation<usize> for TestOperation {
 
 #[test]
 fn stress_test() {
-    let (mut writer, handle) = unsafe { left_right::new(0, 0) };
+    let (mut writer, handle) = unsafe { left_right::new::<_, Vec<_>>(0, 0) };
 
     let barrier = Arc::new(Barrier::new(READ_THREADS + 1));
     let handles: Vec<_> = (0..READ_THREADS)
