@@ -174,6 +174,7 @@ impl<T, L> Deref for Writer<T, L> {
 }
 
 /// [`Future`] behind [`Writer::flush`].
+#[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct Flush<'a, T, L: Log<T>> {
     writer: &'a mut Writer<T, L>,
     flushed: bool,
