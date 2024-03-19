@@ -11,7 +11,8 @@ fn main() {
     let initial_config = Arc::new(initial_config);
 
     // Create a new left-right data structure from the configuration.
-    let (mut writer, handle) = left_right::new_cloned::<_, Vec<_>>(initial_config);
+    let (mut writer, handle) =
+        left_right::new_cloned::<_, Option<OverwriteOperation<_>>>(initial_config);
 
     // Do something useful...
     let reader = handle.into_reader();
