@@ -128,9 +128,7 @@ pub unsafe trait Log<T>: Sized {
     ///
     /// All operations in the log must be applied to ensure both copies are in
     /// sync.
-    fn apply_and_clear(&mut self, target: &mut T)
-    where
-        Self: Sized;
+    fn apply_and_clear(&mut self, target: &mut T);
 }
 
 unsafe impl<O, T> Log<T> for Vec<O>
@@ -151,10 +149,7 @@ where
         self.push(operation);
     }
 
-    fn apply_and_clear(&mut self, target: &mut T)
-    where
-        Self: Sized,
-    {
+    fn apply_and_clear(&mut self, target: &mut T) {
         for operation in self.drain(..) {
             operation.apply_again(target);
         }
@@ -181,10 +176,7 @@ where
         *self = Some(operation);
     }
 
-    fn apply_and_clear(&mut self, target: &mut T)
-    where
-        Self: Sized,
-    {
+    fn apply_and_clear(&mut self, target: &mut T) {
         if let Some(operation) = self.take() {
             operation.apply_again(target)
         }
