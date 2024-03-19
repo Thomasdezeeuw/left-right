@@ -68,19 +68,29 @@ use std::hash::{BuildHasher, Hash};
 use std::ops::Deref;
 
 /// Create a new hashmap.
-pub fn new<K, V>() -> (Writer<K, V>, Handle<K, V>) {
+pub fn new<K, V>() -> (Writer<K, V>, Handle<K, V>)
+where
+    K: Clone + Eq + Hash,
+    V: Clone,
+{
     with_hasher(RandomState::default())
 }
 
 /// Creates an empty hashmap with at least the specified `capacity`.
-pub fn with_capacity<K, V>(capacity: usize) -> (Writer<K, V>, Handle<K, V>) {
+pub fn with_capacity<K, V>(capacity: usize) -> (Writer<K, V>, Handle<K, V>)
+where
+    K: Clone + Eq + Hash,
+    V: Clone,
+{
     with_capacity_and_hasher(capacity, RandomState::default())
 }
 
 /// Creates an empty hashmap which will use the given hash builder to hash keys.
 pub fn with_hasher<K, V, S>(hasher: S) -> (Writer<K, V, S>, Handle<K, V, S>)
 where
-    S: Clone,
+    K: Clone + Eq + Hash,
+    V: Clone,
+    S: BuildHasher + Clone,
 {
     let left = HashMap::with_hasher(hasher.clone());
     let right = HashMap::with_hasher(hasher);
@@ -96,7 +106,9 @@ pub fn with_capacity_and_hasher<K, V, S>(
     hasher: S,
 ) -> (Writer<K, V, S>, Handle<K, V, S>)
 where
-    S: Clone,
+    K: Clone + Eq + Hash,
+    V: Clone,
+    S: BuildHasher + Clone,
 {
     let left = HashMap::with_capacity_and_hasher(capacity, hasher.clone());
     let right = HashMap::with_capacity_and_hasher(capacity, hasher);
@@ -136,7 +148,7 @@ where
 /// assert_eq!(reader.len(), 1);
 /// ```
 pub struct Writer<K, V, S = RandomState> {
-    inner: crate::Writer<HashMap<K, V, S>, Operation<K, V>>,
+    inner: crate::Writer<HashMap<K, V, S>, Vec<Operation<K, V>>>,
 }
 
 /// Writer [operation] for [`Writer`].

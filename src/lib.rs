@@ -21,13 +21,13 @@ pub mod hashmap;
 /// # Safety
 ///
 /// `left` and `right` **must** be equal.
-pub unsafe fn new<T, O>(left: T, right: T) -> (Writer<T, O>, Handle<T>) {
+pub unsafe fn new<T, L: Log<T>>(left: T, right: T) -> (Writer<T, L>, Handle<T>) {
     let shared = unsafe { Shared::new(left, right) };
     (
         Writer {
             shared: shared.clone(),
             last_seen_epochs: Vec::new(),
-            log: Vec::new(),
+            log: L::new(),
         },
         Handle { shared },
     )
@@ -40,7 +40,7 @@ pub unsafe fn new<T, O>(left: T, right: T) -> (Writer<T, O>, Handle<T>) {
 /// This function is safe because it assumes that the [`Default`] implementation
 /// for `T` always returns the same value. If this is not the case the left and
 /// right copies will be out of sync.
-pub fn new_from_default<T: Default, O>() -> (Writer<T, O>, Handle<T>) {
+pub fn new_from_default<T: Default, L: Log<T>>() -> (Writer<T, L>, Handle<T>) {
     unsafe { new(T::default(), T::default()) }
 }
 
@@ -51,20 +51,20 @@ pub fn new_from_default<T: Default, O>() -> (Writer<T, O>, Handle<T>) {
 /// This function is safe because it assumes that the [`Clone`] implementation
 /// for `T` returns the same value as `value`. If this is not the case the left
 /// and right copies will be out of sync.
-pub fn new_cloned<T: Clone, O>(value: T) -> (Writer<T, O>, Handle<T>) {
+pub fn new_cloned<T: Clone, L: Log<T>>(value: T) -> (Writer<T, L>, Handle<T>) {
     unsafe { new(value.clone(), value) }
 }
 
 /// Write access to the left-right data structure.
-pub struct Writer<T, O> {
+pub struct Writer<T, L> {
     shared: Pin<Arc<Shared<T>>>,
     last_seen_epochs: Vec<usize>,
-    log: Vec<O>,
+    log: L,
 }
 
-impl<T, O> Writer<T, O>
+impl<T, L> Writer<T, L>
 where
-    O: Operation<T>,
+    L: Log<T>,
 {
     /// Apply `operation` to the data structure.
     ///
@@ -73,7 +73,7 @@ where
     /// The `operation` will only be applied to the writer's copy of the data
     /// structure, **not** the readers' copy. For the change to take affect call
     /// [`Writer::flush`].
-    pub fn apply(&mut self, operation: O) {
+    pub fn apply(&mut self, operation: L::Operation) {
         operation.apply(self.value_mut());
         self.log.push(operation);
     }
@@ -85,7 +85,7 @@ where
     ///
     /// The caller must ensure that `operation` (equivalent) is already applied
     /// to the writer's copy, otherwise the two would go out of sync.
-    pub unsafe fn apply_to_reader_copy(&mut self, operation: O) {
+    pub unsafe fn apply_to_reader_copy(&mut self, operation: L::Operation) {
         self.log.push(operation);
     }
 
@@ -115,10 +115,7 @@ where
         // new copy to ensure both are in sync again.
         // SAFETY: we're the `Writer`.
         let value = unsafe { self.shared.as_ref().writer_access_mut() };
-        for operation in self.log.drain(..) {
-            operation.apply_again(&mut *value);
-        }
-        self.log.clear();
+        self.log.apply_and_clear(&mut *value);
     }
 
     /// Flush all previously [applied] operations so that the readers can see
@@ -137,7 +134,7 @@ where
     ///
     /// If the returned [`Flush`] `Future` is not polled to completion **and**
     /// it is leaked `Writer` will be an invalid state not safe to use any more.
-    pub fn flush<'a>(&'a mut self) -> Flush<'a, T, O> {
+    pub fn flush<'a>(&'a mut self) -> Flush<'a, T, L> {
         // This follows the same pattern as [`Writer::blocking_flush`].
 
         let shared = self.shared.as_ref();
@@ -167,7 +164,7 @@ where
     }
 }
 
-impl<T, O> Deref for Writer<T, O> {
+impl<T, L> Deref for Writer<T, L> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -177,12 +174,12 @@ impl<T, O> Deref for Writer<T, O> {
 }
 
 /// [`Future`] behind [`Writer::flush`].
-pub struct Flush<'a, T, O: Operation<T>> {
-    writer: &'a mut Writer<T, O>,
+pub struct Flush<'a, T, L: Log<T>> {
+    writer: &'a mut Writer<T, L>,
     flushed: bool,
 }
 
-impl<'a, T, O: Operation<T>> Flush<'a, T, O> {
+impl<'a, T, L: Log<T>> Flush<'a, T, L> {
     /// Apply all operations to the current writer copy (the old reader copy).
     ///
     /// # Safety
@@ -192,15 +189,12 @@ impl<'a, T, O: Operation<T>> Flush<'a, T, O> {
     unsafe fn apply_operations(&mut self) {
         // SAFETY: we're the `Writer`.
         let value = unsafe { self.writer.shared.as_ref().writer_access_mut() };
-        for operation in self.writer.log.drain(..) {
-            operation.apply_again(&mut *value);
-        }
-        self.writer.log.clear();
+        self.writer.log.apply_and_clear(&mut *value);
         self.flushed = true;
     }
 }
 
-impl<'a, T, O: Operation<T>> Future for Flush<'a, T, O> {
+impl<'a, T, L: Log<T>> Future for Flush<'a, T, L> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<()> {
@@ -226,7 +220,7 @@ impl<'a, T, O: Operation<T>> Future for Flush<'a, T, O> {
     }
 }
 
-impl<'a, T, O: Operation<T>> Drop for Flush<'a, T, O> {
+impl<'a, T, L: Log<T>> Drop for Flush<'a, T, L> {
     fn drop(&mut self) {
         if !self.flushed {
             let epochs = &mut self.writer.last_seen_epochs;
