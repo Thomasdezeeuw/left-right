@@ -37,9 +37,9 @@ pub unsafe fn new<T, L: Log<T>>(left: T, right: T) -> (Writer<T, L>, Handle<T>) 
 ///
 /// # Safety
 ///
-/// This function is safe because it assumes that the [`Default`] implementation
-/// for `T` always returns the same value. If this is not the case the left and
-/// right copies will be out of sync.
+/// This function is safe based on the assumption that the [`Default`]
+/// implementation for `T` always returns the same value. If this is not the
+/// case the left and right copies will be out of sync.
 pub fn new_from_default<T: Default, L: Log<T>>() -> (Writer<T, L>, Handle<T>) {
     unsafe { new(T::default(), T::default()) }
 }
@@ -48,9 +48,9 @@ pub fn new_from_default<T: Default, L: Log<T>>() -> (Writer<T, L>, Handle<T>) {
 ///
 /// # Safety
 ///
-/// This function is safe because it assumes that the [`Clone`] implementation
-/// for `T` returns the same value as `value`. If this is not the case the left
-/// and right copies will be out of sync.
+/// This function is safe based on the assumption that the [`Clone`]
+/// implementation for `T` returns the same value as `value`. If this is not the
+/// case the left and right copies will be out of sync.
 pub fn new_cloned<T: Clone, L: Log<T>>(value: T) -> (Writer<T, L>, Handle<T>) {
     unsafe { new(value.clone(), value) }
 }
@@ -306,8 +306,7 @@ impl<T> Reader<T> {
         unsafe { self.read().deref().clone() }
     }
 
-    /// Create new a `Handle` from this `Reader` so it can be moved across
-    /// threads.
+    /// Returns the underlying `Handle` from this `Reader`.
     pub fn as_handle(&self) -> &Handle<T> {
         &self.handle
     }
@@ -334,10 +333,15 @@ impl<T> Clone for Reader<T> {
     }
 
     fn clone_from(&mut self, source: &Reader<T>) {
+        let Reader {
+            handle,
+            epoch_index,
+            _not_send,
+        } = self;
         // NOTE: don't need to copy `epoch_index` as it should already be the
         // same (can't move `Reader` across thread bounds after all).
-        debug_assert!(self.epoch_index == source.epoch_index);
-        self.handle.clone_from(&source.handle);
+        debug_assert!(*epoch_index == source.epoch_index);
+        handle.clone_from(&source.handle);
     }
 }
 
@@ -354,7 +358,6 @@ pub struct ReadGuard<'a, T: ?Sized> {
 
 impl<'a, T: ?Sized> ReadGuard<'a, T> {
     /// Map the value `T` to `U`.
-    //#[rustfmt::skip]
     pub fn map<F, U>(self, map: F) -> ReadGuard<'a, U>
     where
         F: FnOnce(&'a T) -> &'a U,
