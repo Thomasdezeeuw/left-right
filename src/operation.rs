@@ -1,11 +1,15 @@
-//! Module with the [`Operation`] trait.
+//! Module with the [`Log`] and [`Operation`] traits.
+//!
+//! [`Log`] is a container for holding [`Operation`]s, which defines a change
+//! made to the data structure.
 
 /// Operation to apply to a left-right data structure.
 ///
 /// # Safety
 ///
 /// The implementation of this trait must ensure that the correctness
-/// instructions are followed.
+/// instructions are followed. If this is not done correctly the two copies will
+/// become out of sync.
 pub unsafe trait Operation<T> {
     /// Apply operation to `target`.
     ///
@@ -31,11 +35,8 @@ pub unsafe trait Operation<T> {
     ///     Division(usize),
     /// }
     ///
-    /// unsafe impl<T> Operation<T> for Calculator
-    /// where
-    ///     T: AddAssign<usize> + DivAssign<usize> + MulAssign<usize> + SubAssign<usize>,
-    /// {
-    ///     fn apply(&self, target: &mut T) {
+    /// unsafe impl Operation<usize> for Calculator {
+    ///     fn apply(&self, target: &mut usize) {
     ///         use Calculator::*;
     ///         match self {
     ///             Addition(n) => target.add_assign(*n),
@@ -102,8 +103,12 @@ where
 /// operations have already been applied to the first copy.
 ///
 /// The easiest and commonly used `Log` type is a `Vec`tor and will do a good
-/// job in all cases. However extraction this a trait means we can optimise for
-/// [`OverwriteOperation`].
+/// job in all cases. However extracting this into a trait means we can optimise
+/// for [`OverwriteOperation`], avoid the allocation of a vector.
+///
+/// # Safety
+///
+/// If this trait is incorrectly implemented the two copies will become out of sync.
 pub unsafe trait Log<T>: Sized {
     type Operation: Operation<T>;
 
@@ -116,7 +121,7 @@ pub unsafe trait Log<T>: Sized {
     ///
     /// This is used as an optimisation to determine when the log doesn't have
     /// to be applied to the second copy. If this incorrectly returns true the
-    /// two copies might get out of sync.
+    /// two copies will be out of sync.
     fn is_empty(&self) -> bool;
 
     /// Add `operation` to the log.
