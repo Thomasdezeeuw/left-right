@@ -318,6 +318,12 @@ impl<T> Reader<T> {
     }
 }
 
+impl<T> From<Handle<T>> for Reader<T> {
+    fn from(handle: Handle<T>) -> Reader<T> {
+        handle.into_reader()
+    }
+}
+
 impl<T> Clone for Reader<T> {
     fn clone(&self) -> Reader<T> {
         Reader {
