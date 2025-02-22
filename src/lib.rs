@@ -1,6 +1,6 @@
 //! Concurrent left-right data structures.
 
-#![feature(thread_id_value, waker_getters)]
+#![feature(thread_id_value)]
 
 use std::future::Future;
 use std::marker::PhantomData;
@@ -759,9 +759,8 @@ mod waker {
         /// Set the waker to use a `task_waker` based waker.
         pub(super) fn set_task_waker(&self, task_waker: task::Waker) {
             let task_waker = ManuallyDrop::new(task_waker);
-            let raw_waker = task_waker.as_raw();
-            let data = raw_waker.data();
-            let vtable = raw_waker.vtable();
+            let data = task_waker.data();
+            let vtable = task_waker.vtable();
             unsafe { self.set_raw(data as *mut (), vtable as *const _ as *const () as *mut ()) };
         }
 
