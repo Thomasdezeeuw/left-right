@@ -71,7 +71,12 @@ impl Waker {
         let task_waker = ManuallyDrop::new(task_waker);
         let data = task_waker.data();
         let vtable = task_waker.vtable();
-        unsafe { self.set_raw(data as *mut (), vtable as *const _ as *const () as *mut ()) };
+        unsafe {
+            self.set_raw(
+                data.cast_mut(),
+                ptr::from_ref(vtable).cast::<()>().cast_mut(),
+            )
+        };
     }
 
     /// # Safety
@@ -149,7 +154,8 @@ impl Waker {
 
     /// Clears the waker, without waking it.
     pub(super) fn clear(&self) {
-        // This follows the same pattern as [`Waker::wake`].
+        // This follows the same pattern as `Waker::wake`, but drops the waker
+        // instead of calling wake.
 
         if self.data.load(Ordering::Relaxed).is_null() {
             // No data set, means no waker set.
@@ -164,10 +170,10 @@ impl Waker {
                 vtable => unsafe {
                     debug_assert!(!vtable.is_null());
 
-                    // SAFETY: see Waker::waker.
+                    // SAFETY: inverse of `Waker::set_task_waker`, see
+                    // `Waker::waker`.
                     let vtable: &'static task::RawWakerVTable = &*vtable.cast();
                     let raw = task::RawWaker::new(data, vtable);
-                    // SAFETY: see Waker::waker.
                     drop(task::Waker::from_raw(raw));
                 },
             }

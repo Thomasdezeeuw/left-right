@@ -467,9 +467,7 @@ mod shared {
                 left: UnsafeCell::new(left),
                 right: UnsafeCell::new(right),
             });
-            shared
-                .read
-                .store(&shared.left as *const _ as *mut _, Ordering::Relaxed);
+            shared.read.store(shared.left.get(), Ordering::Relaxed);
             shared
         }
 
@@ -546,13 +544,13 @@ mod shared {
             let ptr = match &mut *self.reading.get() {
                 reading @ Reading::Left => {
                     *reading = Reading::Right;
-                    &self.right
+                    self.right.get()
                 }
                 reading @ Reading::Right => {
                     *reading = Reading::Left;
-                    &self.left
+                    self.left.get()
                 }
-            } as *const _ as *mut _;
+            };
             // Switch which copy the readers are accessing.
             self.read.store(ptr, Ordering::SeqCst);
             // NOTE: per the docs, the `Shared` object is not in an invalid
