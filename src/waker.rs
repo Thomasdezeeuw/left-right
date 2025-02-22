@@ -62,8 +62,8 @@ impl Waker {
 
     /// Set the waker to use a `thread` based waker.
     pub(super) fn set_thread(&self, thread: thread::Thread) {
-        let data = thread_as_ptr(thread);
-        unsafe { self.set_raw(data, THREAD_VTABLE) };
+        let data = thread.into_raw();
+        unsafe { self.set_raw(data.cast_mut(), THREAD_VTABLE) };
     }
 
     /// Set the waker to use a `task_waker` based waker.
@@ -127,7 +127,7 @@ impl Waker {
         if !data.is_null() {
             let vtable = self.vtable.swap(ptr::null_mut(), Ordering::SeqCst);
             match vtable {
-                THREAD_VTABLE => unsafe { ptr_as_thread(data).unpark() },
+                THREAD_VTABLE => unsafe { thread::Thread::from_raw(data).unpark() },
                 vtable => unsafe {
                     // It should not be possible for the `vtable` to be null.
                     // It's always set before the data is set and is always read
@@ -160,7 +160,7 @@ impl Waker {
         if !data.is_null() {
             let vtable = self.vtable.swap(ptr::null_mut(), Ordering::SeqCst);
             match vtable {
-                THREAD_VTABLE => unsafe { drop(ptr_as_thread(data)) },
+                THREAD_VTABLE => unsafe { drop(thread::Thread::from_raw(data)) },
                 vtable => unsafe {
                     debug_assert!(!vtable.is_null());
 
@@ -173,19 +173,4 @@ impl Waker {
             }
         }
     }
-}
-
-/// Returns `thread` as a pointer.
-fn thread_as_ptr(thread: thread::Thread) -> *mut () {
-    // SAFETY: this is not safe.
-    // However `Thread` under the hood is just a `Pin<Arc>`, which is just a
-    // pointer, so it does work.
-    unsafe { std::mem::transmute(thread) }
-}
-
-/// Reverse of [`thread_as_ptr`].
-unsafe fn ptr_as_thread(ptr: *mut ()) -> thread::Thread {
-    // SAFETY: this is not safe.
-    // However as long as it's the reverse of `thread_as_ptr` will work.
-    unsafe { std::mem::transmute(ptr) }
 }

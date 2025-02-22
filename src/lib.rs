@@ -1,6 +1,6 @@
 //! Concurrent left-right data structures.
 
-#![feature(thread_id_value)]
+#![feature(thread_id_value, thread_raw)]
 
 use std::future::Future;
 use std::marker::PhantomData;
