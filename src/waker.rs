@@ -50,7 +50,7 @@ pub(super) struct Waker {
 }
 
 /// Fake vtable data for [`Waker`].
-const THREAD_VTABLE: *mut () = 1 as *mut ();
+const THREAD_VTABLE: *mut () = ptr::without_provenance_mut(1);
 
 impl Waker {
     /// Create a new `Waker`.
