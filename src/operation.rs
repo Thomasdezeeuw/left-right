@@ -111,6 +111,7 @@ where
 ///
 /// If this trait is incorrectly implemented the two copies will become out of sync.
 pub unsafe trait Log<T>: Sized {
+    /// How to apply the operation.
     type Operation: Operation<T>;
 
     /// Create a new empty log.
