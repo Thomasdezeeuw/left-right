@@ -41,7 +41,7 @@ fn read_guard_map_panic() {
     }
 
     // The read should still be usable.
-    assert_eq!(unsafe { reader.read().deref() }, "Hello");
+    assert_eq!(unsafe { reader.read() }.deref(), "Hello");
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn writer_apply_does_not_apply_to_reader_copy() {
     let reader = handle.into_reader();
 
     writer.apply(TestOperation::Append("test"));
-    assert_eq!(unsafe { reader.read().deref() }, "");
+    assert_eq!(unsafe { reader.read() }.deref(), "");
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn writer_blocking_flush_shows_changes_to_reader_copy() {
 
     writer.apply(TestOperation::Append("test"));
     writer.blocking_flush();
-    assert_eq!(unsafe { reader.read().deref() }, "test");
+    assert_eq!(unsafe { reader.read() }.deref(), "test");
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn writer_blocking_flush_shows_changes_to_reader_copy_on_different_thread() {
         drop(read_guard);
 
         read_barrier.wait(); // Stage 3.
-        assert_eq!(unsafe { reader.read().deref() }, "test");
+        assert_eq!(unsafe { reader.read() }.deref(), "test");
     });
 
     barrier.wait(); // Stage 1.
@@ -125,7 +125,7 @@ fn writer_flush_shows_changes_to_reader_copy() {
     let mut ctx = task::Context::from_waker(&waker);
     assert_eq!(future.as_mut().poll(&mut ctx), Poll::Ready(()));
 
-    assert_eq!(unsafe { reader.read().deref() }, "test");
+    assert_eq!(unsafe { reader.read() }.deref(), "test");
 
     assert_eq!(wake_count, 0);
 }
@@ -153,7 +153,7 @@ fn writer_flush_shows_changes_to_reader_copy_on_different_thread() {
         drop(read_guard);
 
         read_barrier.wait(); // Stage 3.
-        assert_eq!(unsafe { reader.read().deref() }, "test");
+        assert_eq!(unsafe { reader.read() }.deref(), "test");
     });
 
     barrier.wait(); // Stage 1.
@@ -201,7 +201,7 @@ fn writer_flush_future_dropped() {
         drop(read_guard);
 
         read_barrier.wait(); // Stage 3.
-        assert_eq!(unsafe { reader.read().deref() }, "test");
+        assert_eq!(unsafe { reader.read() }.deref(), "test");
     });
 
     barrier.wait(); // Stage 1.
@@ -239,9 +239,9 @@ fn writer_flush_future_polled_many_times() {
     drop(read_guard);
     assert_eq!(future.as_mut().poll(&mut ctx), Poll::Ready(()));
 
-    assert_eq!(unsafe { reader.read().deref() }, "test");
+    assert_eq!(unsafe { reader.read() }.deref(), "test");
     drop(future);
-    assert_eq!(unsafe { reader.read().deref() }, writer.deref());
+    assert_eq!(unsafe { reader.read() }.deref(), writer.deref());
 
     assert_eq!(wake_count, 1);
 }
@@ -261,9 +261,9 @@ fn writer_flush_future_polled_after_completion() {
         assert_eq!(future.as_mut().poll(&mut ctx), Poll::Ready(()));
     }
 
-    assert_eq!(unsafe { reader.read().deref() }, "test");
+    assert_eq!(unsafe { reader.read() }.deref(), "test");
     drop(future);
-    assert_eq!(unsafe { reader.read().deref() }, writer.deref());
+    assert_eq!(unsafe { reader.read() }.deref(), writer.deref());
 
     assert_eq!(wake_count, 0);
 }
@@ -275,7 +275,7 @@ fn overwrite_operation_works() {
 
     writer.apply(OverwriteOperation::new("test"));
     writer.blocking_flush();
-    assert_eq!(unsafe { *reader.read().deref() }, "test");
+    assert_eq!(unsafe { *reader.read() }, "test");
 }
 
 #[test]
@@ -286,12 +286,12 @@ fn overwrite_operation_log_works() {
 
     writer.apply(OverwriteOperation::new("test"));
     writer.blocking_flush();
-    assert_eq!(unsafe { *reader.read().deref() }, "test");
+    assert_eq!(unsafe { *reader.read() }, "test");
 
     writer.apply(OverwriteOperation::new("test2"));
     writer.apply(OverwriteOperation::new("test3"));
     writer.blocking_flush();
-    assert_eq!(unsafe { *reader.read().deref() }, "test3");
+    assert_eq!(unsafe { *reader.read() }, "test3");
 }
 
 fn new_count_waker() -> (task::Waker, AwokenCount) {

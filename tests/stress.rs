@@ -26,7 +26,6 @@ fn stress_test() {
 
     let barrier = Arc::new(Barrier::new(READ_THREADS + 1));
     let handles: Vec<_> = (0..READ_THREADS)
-        .into_iter()
         .map(|_| {
             let handle = handle.clone();
             let barrier = barrier.clone();
