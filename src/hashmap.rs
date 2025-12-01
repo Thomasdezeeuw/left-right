@@ -399,7 +399,9 @@ impl<K, V, S> Reader<K, V, S> {
     /// At most one `ReadGuard` may be alive per thread. No other method on the
     /// type may be called while the `ReadGuard` is alive on this thread.
     pub unsafe fn read<'a>(&'a self) -> crate::ReadGuard<'a, HashMap<K, V, S>> {
-        self.inner.read()
+        // SAFETY: the same safety requirement apply to this function, so it's
+        // up to the caller.
+        unsafe { self.inner.read() }
     }
 }
 

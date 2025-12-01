@@ -141,6 +141,7 @@ where
         // This follows the same pattern as [`Writer::blocking_flush`].
 
         let shared = self.shared.as_ref();
+        // SAFETY: we're waiting on the readers below.
         unsafe { shared.switch_reading_pointers() };
         shared.fill_epochs(&mut self.last_seen_epochs);
 
@@ -490,9 +491,10 @@ mod shared {
         /// Only the `Writer` is allowed to call this.
         pub(super) unsafe fn writer_access<'a>(self: Pin<&'a Self>) -> &'a T {
             // SAFETY: caller must ensure we're the writer.
-            match &*self.reading.get() {
-                Reading::Left => &*self.right.get(),
-                Reading::Right => &*self.left.get(),
+            match unsafe { &*self.reading.get() } {
+                // SAFETY: we're checking which pointer we can safely dereference.
+                Reading::Left => unsafe { &*self.right.get() },
+                Reading::Right => unsafe { &*self.left.get() },
             }
         }
 
@@ -503,9 +505,10 @@ mod shared {
         /// Only the `Writer` is allowed to call this.
         pub(super) unsafe fn writer_access_mut<'a>(self: Pin<&'a Self>) -> &'a mut T {
             // SAFETY: caller must ensure we're the writer.
-            match &*self.reading.get() {
-                Reading::Left => &mut *self.right.get(),
-                Reading::Right => &mut *self.left.get(),
+            match unsafe { &*self.reading.get() } {
+                // SAFETY: we're checking which pointer we can safely dereference.
+                Reading::Left => unsafe { &mut *self.right.get() },
+                Reading::Right => unsafe { &mut *self.left.get() },
             }
         }
 
@@ -525,7 +528,8 @@ mod shared {
         ///
         /// Only the `Writer` is allowed to call this.
         pub(super) unsafe fn switch_reading(self: Pin<&Self>, current_epochs: &mut Vec<usize>) {
-            self.switch_reading_pointers();
+            // SAFETY: we're waiting on the readers below.
+            unsafe { self.switch_reading_pointers() };
             self.fill_epochs(current_epochs);
 
             // If one or more readers are currently accessing the writer's copy
@@ -548,7 +552,7 @@ mod shared {
         /// Only the `Writer` is allowed to call this.
         pub(super) unsafe fn switch_reading_pointers(self: Pin<&Self>) {
             // SAFETY: caller must ensure we're the writer.
-            let ptr = match &mut *self.reading.get() {
+            let ptr = match unsafe { &mut *self.reading.get() } {
                 reading @ Reading::Left => {
                     *reading = Reading::Right;
                     self.right.get()
