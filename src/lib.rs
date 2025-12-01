@@ -489,6 +489,7 @@ mod shared {
         /// # Safety
         ///
         /// Only the `Writer` is allowed to call this.
+        #[allow(clippy::needless_lifetimes)]
         pub(super) unsafe fn writer_access<'a>(self: Pin<&'a Self>) -> &'a T {
             // SAFETY: caller must ensure we're the writer.
             match unsafe { &*self.reading.get() } {
@@ -503,6 +504,7 @@ mod shared {
         /// # Safety
         ///
         /// Only the `Writer` is allowed to call this.
+        #[allow(clippy::needless_lifetimes, clippy::mut_from_ref)]
         pub(super) unsafe fn writer_access_mut<'a>(self: Pin<&'a Self>) -> &'a mut T {
             // SAFETY: caller must ensure we're the writer.
             match unsafe { &*self.reading.get() } {
@@ -591,9 +593,10 @@ mod shared {
         /// the reader's epoch.
         pub(super) fn all_readers_switched(self: Pin<&Self>, current_epochs: &mut [usize]) -> bool {
             // We check if the current epoch (`ce`) is in a not-accessing state
-            // (`% 2 == 0`) or if the new epoch (`ne`) is in a different state
-            // then previously recorded (`ce != ne`). Note we use `!=` instead
-            // of `>` because the epoch can wrap around (after 2^63 reads).
+            // (`is_multiple_of(2)`) or if the new epoch (`ne`) is in a
+            // different state then previously recorded (`ce != ne`). Note we
+            // use `!=` instead of `>` because the epoch can wrap around (after
+            // 2^63 reads).
             zip(
                 current_epochs.iter_mut(),
                 self.status.read_epochs.read().unwrap().iter(),
@@ -601,7 +604,7 @@ mod shared {
             .all(|(ce, ne)| {
                 // If we know the reader is not accessing the value we don't
                 // have to load their epoch.
-                if *ce % 2 == 0 {
+                if ce.is_multiple_of(2) {
                     return true;
                 }
 
@@ -662,13 +665,14 @@ mod shared {
         }
 
         /// Mark thread with `epoch_index` as reading.
+        #[allow(clippy::needless_lifetimes)]
         pub(super) fn mark_reading<'a>(self: Pin<&'a Self>, epoch_index: NonZeroU64) -> &'a T {
             // SAFETY: `epoch_index` ensures the `read_epochs` vector is long
             // enough to make this index safe.
             let old_epoch = self.status.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
             debug_assert!(
-                old_epoch % 2 == 0,
+                old_epoch.is_multiple_of(2),
                 "holding two read guards on the same thread"
             );
             // SAFETY: safe based on the requirements on `Shared.read`.
@@ -683,7 +687,7 @@ mod shared {
             // enough to make this index safe.
             let old_epoch = self.read_epochs.read().unwrap()[epoch_index.get() as usize]
                 .fetch_add(1, Ordering::SeqCst);
-            debug_assert!(old_epoch % 2 == 1, "invalid epoch state");
+            debug_assert!(!old_epoch.is_multiple_of(2), "invalid epoch state");
             self.waker.wake()
         }
     }
