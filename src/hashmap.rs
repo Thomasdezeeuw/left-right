@@ -147,6 +147,7 @@ where
 /// assert_eq!(reader.get_cloned("key"), Some("value"));
 /// assert_eq!(reader.len(), 1);
 /// ```
+#[derive(Debug)]
 pub struct Writer<K, V, S = RandomState> {
     inner: crate::Writer<HashMap<K, V, S>, Vec<Operation<K, V>>>,
 }
@@ -154,6 +155,7 @@ pub struct Writer<K, V, S = RandomState> {
 /// Writer [operation] for [`Writer`].
 ///
 /// [operation]: crate::Operation
+#[derive(Debug)]
 enum Operation<K, V> {
     Reserve(usize),
     ShrinkToFit,
@@ -301,7 +303,7 @@ impl<K, V, S> Deref for Writer<K, V, S> {
 /// See [`left_right::Handle`] for more information on usage.
 ///
 /// [`left_right::Handle`]: crate::Handle
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Handle<K, V, S = RandomState> {
     inner: crate::Handle<HashMap<K, V, S>>,
 }
@@ -319,6 +321,7 @@ impl<K, V, S> Handle<K, V, S> {
 ///
 /// A `Reader` is always bound to a thread and is thus not [`Send`], to move a
 /// reader across thread bounds first convert it into a [`Handle`].
+#[derive(Debug)]
 pub struct Reader<K, V, S = RandomState> {
     inner: crate::Reader<HashMap<K, V, S>>,
 }

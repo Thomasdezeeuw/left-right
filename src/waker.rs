@@ -6,6 +6,7 @@ use std::{ptr, task, thread};
 
 /// Waker that can either be a [`task::Waker`] or a [`thread::Thread::unpark`]
 /// based waker.
+#[derive(Debug)]
 pub(super) struct Waker {
     /// The `data` and `vtable` field somewhat mimic the `task::RawWaker`, in
     /// fact it could be the exact fields to a `task::RawWaker`. With these two

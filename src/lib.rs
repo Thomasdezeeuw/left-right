@@ -58,6 +58,7 @@ pub fn new_cloned<T: Clone, L: Log<T>>(value: T) -> (Writer<T, L>, Handle<T>) {
 }
 
 /// Write access to the left-right data structure.
+#[derive(Debug)]
 pub struct Writer<T, L> {
     shared: Pin<Arc<Shared<T>>>,
     last_seen_epochs: Vec<usize>,
@@ -177,6 +178,7 @@ impl<T, L> Deref for Writer<T, L> {
 
 /// [`Future`] behind [`Writer::flush`].
 #[must_use = "futures do nothing unless you `.await` or poll them"]
+#[derive(Debug)]
 pub struct Flush<'a, T, L: Log<T>> {
     writer: &'a mut Writer<T, L>,
     flushed: bool,
@@ -242,6 +244,7 @@ impl<'a, T, L: Log<T>> Drop for Flush<'a, T, L> {
 ///  * Cheaply [`clone`] it.
 ///
 /// [`clone`]: Clone
+#[derive(Debug)]
 pub struct Handle<T> {
     shared: Pin<Arc<Shared<T>>>,
 }
@@ -270,6 +273,7 @@ impl<T> Clone for Handle<T> {
 ///
 /// A `Reader` is always bound to a thread and is thus not [`Send`], to move a
 /// reader across first convert into a [`Handle`].
+#[derive(Debug)]
 pub struct Reader<T> {
     handle: Handle<T>,
     /// Index into the epochs vector.
@@ -349,6 +353,7 @@ impl<T> Clone for Reader<T> {
 
 /// Similar to a mutex guard this protects the data structure so that the read
 /// access is properly synchronised with possible concurrent writes.
+#[derive(Debug)]
 pub struct ReadGuard<'a, T: ?Sized> {
     value: &'a T,
     status: Pin<&'a Status>,
@@ -412,6 +417,7 @@ mod shared {
     /// # Safety
     ///
     /// Must always be pinned in memory!
+    #[derive(Debug)]
     pub(super) struct Shared<T> {
         /// Pointer to either `left` or `right`.
         ///
@@ -439,6 +445,7 @@ mod shared {
     ///
     /// This is a separate type so it can be used in `ReadGuard` without a type,
     /// allowing `ReadGuard::map` to exist.
+    #[derive(Debug)]
     pub(super) struct Status {
         /// Epochs for the readers.
         read_epochs: RwLock<Vec<AtomicUsize>>,

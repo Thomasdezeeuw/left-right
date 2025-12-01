@@ -73,6 +73,7 @@ pub unsafe trait Operation<T> {
 ///
 /// An optimised implementation of the [`Log`] trait is available in
 /// `Option<OverwriteOperation<T>>` when using this type.
+#[derive(Debug)]
 pub struct OverwriteOperation<T> {
     value: T,
 }
