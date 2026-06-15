@@ -407,9 +407,9 @@ mod shared {
     use std::num::NonZeroU64;
     use std::panic::RefUnwindSafe;
     use std::pin::Pin;
-    use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, RwLock};
-    use std::{ptr, task, thread};
+    use std::{task, thread};
 
     use super::waker::Waker;
 
@@ -420,18 +420,11 @@ mod shared {
     /// Must always be pinned in memory!
     #[derive(Debug)]
     pub(super) struct Shared<T> {
-        /// Pointer to either `left` or `right`.
-        ///
-        /// # Safety
-        ///
-        /// This must always point to either `left` or `right` and must be valid
-        /// for at least as long as `Shared` lives.
-        read: AtomicPtr<T>,
-        /// Status
+        /// Status.
         status: Status,
         /// Is `read` pointing to `left` or `right?
-        /// Maybe only be accessed by the writer.
-        reading: UnsafeCell<Reading>,
+        /// May only be changed by the writer.
+        reading: AtomicBool,
         /// Left copy.
         /// Maybe only be accessed by the writer **iff** `read` is currently
         /// pointing to `right`.
@@ -454,29 +447,26 @@ mod shared {
         waker: Waker,
     }
 
-    /// Are we writing to the left or right data structure?
-    enum Reading {
-        Left,
-        Right,
-    }
+    /// Options for [`Shared::reading`].
+    /// NOTE: using `bool` here as it only has two values, which happens to
+    /// match what we need.
+    const READING_LEFT: bool = false;
+    const READING_RIGHT: bool = true;
 
     impl<T> Shared<T> {
         /// # Safety
         ///
         /// `left` and `right` **must** be equal.
         pub(super) unsafe fn new(left: T, right: T) -> Pin<Arc<Shared<T>>> {
-            let shared = Arc::pin(Shared {
-                read: AtomicPtr::new(ptr::null_mut()), // NOTE: set below.
+            Arc::pin(Shared {
                 status: Status {
                     read_epochs: RwLock::new(Vec::new()),
                     waker: Waker::new(),
                 },
-                reading: UnsafeCell::new(Reading::Left),
+                reading: AtomicBool::new(READING_LEFT),
                 left: UnsafeCell::new(left),
                 right: UnsafeCell::new(right),
-            });
-            shared.read.store(shared.left.get(), Ordering::Relaxed);
-            shared
+            })
         }
 
         /// Returns a pinned reference to `Status`.
@@ -491,11 +481,14 @@ mod shared {
         /// Only the `Writer` is allowed to call this.
         #[allow(clippy::needless_lifetimes)]
         pub(super) unsafe fn writer_access<'a>(self: Pin<&'a Self>) -> &'a T {
-            // SAFETY: caller must ensure we're the writer.
-            match unsafe { &*self.reading.get() } {
-                // SAFETY: we're checking which pointer we can safely dereference.
-                Reading::Left => unsafe { &*self.right.get() },
-                Reading::Right => unsafe { &*self.left.get() },
+            // SAFETY: caller must ensure we're the writer. Since only the
+            // writer can change the `reading` value it's ok to use Relaxed
+            // ordering.
+            match self.reading.load(Ordering::Relaxed) {
+                // SAFETY: we've checked which pointer the writer can safely
+                // dereference.
+                READING_LEFT => unsafe { &*self.right.get() },
+                READING_RIGHT => unsafe { &*self.left.get() },
             }
         }
 
@@ -506,11 +499,14 @@ mod shared {
         /// Only the `Writer` is allowed to call this.
         #[allow(clippy::needless_lifetimes, clippy::mut_from_ref)]
         pub(super) unsafe fn writer_access_mut<'a>(self: Pin<&'a Self>) -> &'a mut T {
-            // SAFETY: caller must ensure we're the writer.
-            match unsafe { &*self.reading.get() } {
-                // SAFETY: we're checking which pointer we can safely dereference.
-                Reading::Left => unsafe { &mut *self.right.get() },
-                Reading::Right => unsafe { &mut *self.left.get() },
+            // SAFETY: caller must ensure we're the writer. Since only the
+            // writer can change the `reading` value it's ok to use Relaxed
+            // ordering.
+            match self.reading.load(Ordering::Relaxed) {
+                // SAFETY: we've checked which pointer the writer can safely
+                // dereference.
+                READING_LEFT => unsafe { &mut *self.right.get() },
+                READING_RIGHT => unsafe { &mut *self.left.get() },
             }
         }
 
@@ -554,18 +550,8 @@ mod shared {
         /// Only the `Writer` is allowed to call this.
         pub(super) unsafe fn switch_reading_pointers(self: Pin<&Self>) {
             // SAFETY: caller must ensure we're the writer.
-            let ptr = match unsafe { &mut *self.reading.get() } {
-                reading @ Reading::Left => {
-                    *reading = Reading::Right;
-                    self.right.get()
-                }
-                reading @ Reading::Right => {
-                    *reading = Reading::Left;
-                    self.left.get()
-                }
-            };
-            // Switch which copy the readers are accessing.
-            self.read.store(ptr, Ordering::SeqCst);
+            // Toggle the reading state (from left to right or right to left).
+            self.reading.fetch_xor(true, Ordering::SeqCst);
             // NOTE: per the docs, the `Shared` object is not in an invalid
             // state.
         }
@@ -675,8 +661,11 @@ mod shared {
                 old_epoch.is_multiple_of(2),
                 "holding two read guards on the same thread"
             );
-            // SAFETY: safe based on the requirements on `Shared.read`.
-            unsafe { &*self.read.load(Ordering::SeqCst) }
+            // SAFETY: we're checking which pointer we can safely dereference.
+            match self.reading.load(Ordering::SeqCst) {
+                READING_LEFT => unsafe { &*self.left.get() },
+                READING_RIGHT => unsafe { &*self.right.get() },
+            }
         }
     }
 
